@@ -101,6 +101,7 @@ lockfile hash, seed and command.
 | Benchmark | Plan | Result |
 |---|---|---|
 | Embedding throughput (`scripts/bench_embed.py`) | [plan](docs/benchmarks/embedding-plan.md) | [results](docs/benchmarks/embedding-results.md): float32 on the dev GPU, 4.98 chunks/s at 512 tokens |
+| Search latency (`scripts/bench_search.py`) | stated in the results | [results](docs/benchmarks/search-latency-results.md): hybrid p50 152 ms local, 219 ms through a tunnel |
 | Retrieval quality (`scripts/eval_retrieval.py`) | [plan](docs/benchmarks/retrieval-plan.md) | pending |
 
 ## Repository layout
