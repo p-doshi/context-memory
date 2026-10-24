@@ -225,7 +225,7 @@ def test_reconcile_repairs_orphans_and_missing(svc):
                     "vector": svc.embedder.embed_query("x")}])
     svc.lance.delete([cid])
     out = svc.reconcile()
-    assert out == {"orphan_vectors_deleted": 1, "documents_to_reembed": 1}
+    assert out == {"orphan_vectors_deleted": 1, "documents_to_reembed": 1, "abandoned_jobs_closed": 0}
     assert svc.sqlite.get_document(r["doc_id"])["content_hash"] == "sha256:invalidated"
 
 
@@ -293,3 +293,12 @@ def test_graph_methods_and_global_modules(svc, settings):
     assert len(mods) == 1  # defined and imported module resolve to one node
     rels = {(e["relation"], e["src_name"]) for e in g.neighbors(mods[0]["entity_id"])["edges"]}
     assert ("imports", "pkg.user") in rels
+
+
+def test_reconcile_closes_abandoned_jobs(svc):
+    svc.sqlite.conn.execute("INSERT INTO ingestion_jobs (job_id, source, started_at, status) "
+                            "VALUES ('old', 'claude', '2026-01-01T00:00:00Z', 'running')")
+    svc.sqlite.start_job("fresh", "claude", None)
+    assert svc.reconcile()["abandoned_jobs_closed"] == 1
+    status = dict(svc.sqlite.conn.execute("SELECT job_id, status FROM ingestion_jobs").fetchall())
+    assert status["old"] == "failed" and status["fresh"] == "running"

@@ -9,6 +9,7 @@ stores never disagree about which chunks are current.
 from __future__ import annotations
 
 from dataclasses import asdict
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
 from context_memory.config import Settings
@@ -120,7 +121,15 @@ class MemoryService:
         docs = {r["doc_id"] for r in self.sqlite.get_chunks(sorted(missing)).values()}
         for doc_id in docs:
             self.sqlite.forget_document(doc_id)
-        out = {"orphan_vectors_deleted": len(orphans), "documents_to_reembed": len(docs)}
+        # Jobs left 'running' by a killed process (no single document takes
+        # two hours, so older running jobs are abandoned).
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%S")
+        abandoned = self.sqlite.conn.execute(
+            "UPDATE ingestion_jobs SET status = 'failed', finished_at = ?, "
+            "details = json_object('error', 'abandoned: process ended mid-job') "
+            "WHERE status = 'running' AND started_at < ?", (utcnow(), cutoff)).rowcount
+        out = {"orphan_vectors_deleted": len(orphans), "documents_to_reembed": len(docs),
+               "abandoned_jobs_closed": abandoned}
         self.sqlite.audit(actor, "reconcile", None, "ok", out)
         return out
 
