@@ -13,6 +13,8 @@ from __future__ import annotations
 import ast
 import subprocess
 from pathlib import Path
+
+from context_memory.util import NO_WINDOW
 from typing import Callable
 
 from context_memory.ingestion.markdown import (
@@ -35,7 +37,7 @@ EXTRA_SKIP = SKIP_DIRS | {"dist", "build", ".mypy_cache", ".ruff_cache", ".tox",
 
 def list_files(root: Path) -> list[Path]:
     try:
-        out = subprocess.run(["git", "ls-files", "-z"], cwd=root, capture_output=True,
+        out = subprocess.run(["git", "ls-files", "-z"], cwd=root, capture_output=True, creationflags=NO_WINDOW,
                              timeout=30)
         if out.returncode == 0:
             names = [n for n in out.stdout.decode("utf-8", "replace").split("\0") if n]

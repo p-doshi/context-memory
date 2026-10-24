@@ -5,6 +5,8 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from context_memory.util import NO_WINDOW
+
 from context_memory.ingestion.sensitive_scanner import blocked_filename
 from context_memory.memory.service import IngressRejected, MemoryService
 
@@ -31,11 +33,11 @@ def git_version(path: Path) -> str | None:
     try:
         cwd = path.parent
         sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=cwd, capture_output=True,
-                             text=True, timeout=5)
+                             text=True, timeout=5, creationflags=NO_WINDOW)
         if sha.returncode != 0:
             return None
         dirty = subprocess.run(["git", "status", "--porcelain", "--", path.name], cwd=cwd,
-                               capture_output=True, text=True, timeout=5)
+                               capture_output=True, text=True, timeout=5, creationflags=NO_WINDOW)
         if dirty.returncode != 0 or dirty.stdout.strip():
             return None
         return "git:" + sha.stdout.strip()[:12]

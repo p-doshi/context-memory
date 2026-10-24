@@ -4,8 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import re
+import subprocess
 import uuid
 from datetime import datetime, timezone
+
+# Child processes of the windowless daemon (pythonw) would each open a console
+# window on Windows; this flag suppresses it. 0 elsewhere.
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 PROJECT_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 
