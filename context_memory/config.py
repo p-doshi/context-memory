@@ -58,8 +58,8 @@ class Settings(BaseSettings):
     # Projects never sent to cloud models (local_models_only, addendum §11).
     cloud_denied_projects: list[str] = Field(default_factory=list)
 
-    # Hub: memory served over HTTP to Claude Code on other machines. Bind it to a
-    # private address only (a Tailscale IP, or 127.0.0.1 behind an SSH forward).
+    # Hub: memory served over HTTP to Claude Code on other machines. It binds
+    # 127.0.0.1; other machines reach it through SSH tunnels (docs/remote-setup.md).
     hub_enabled: bool = False
     hub_host: str = "127.0.0.1"
     hub_port: int = 8765

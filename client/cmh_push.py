@@ -6,8 +6,7 @@ Standard library only; Python 3.8+. Copy this one file to each machine.
 Configuration (environment variables, or ~/.config/cmh/push.json with the same
 keys in lower case without the CMH_ prefix, e.g. {"hub_url": ..., "account": ...}):
 
-  CMH_HUB_URL      e.g. http://127.0.0.1:8765 (through an SSH forward) or
-                   http://jarvis-laptop:8765 (Tailscale)
+  CMH_HUB_URL      e.g. http://127.0.0.1:8765, the end of an SSH tunnel to the hub
   CMH_TOKEN_FILE   file holding this device's token (default ~/.config/cmh/token,
                    must not be readable by other users)
   CMH_ACCOUNT      Claude account label for these sessions (optional; the hub

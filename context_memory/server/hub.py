@@ -7,9 +7,9 @@ Routes (all require `Authorization: Bearer <device token>`):
   GET  /v1/health      liveness and the calling device's name
 
 Each remote machine gets its own token (`cmh device add <name>`), stored only
-as a SHA-256, revocable at any time. The hub binds to one address (default
-127.0.0.1); expose it on a private network such as a Tailscale interface or
-through an SSH port forward, never on a public interface (design §24).
+as a SHA-256, revocable at any time. The hub binds 127.0.0.1; other machines
+reach it only through SSH tunnels (server/tunnels.py, docs/remote-setup.md),
+never through a public interface (design §24).
 
 The hub uses its own SQLite and LanceDB connections and shares only the
 embedding model with the daemon (the model serialises GPU use internally).

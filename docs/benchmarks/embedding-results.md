@@ -6,7 +6,7 @@ Raw data: [results/embed-20261024-164440.json](results/embed-20261024-164440.jso
 | | |
 |---|---|
 | Command | `python -u scripts/bench_embed.py --grid reduced --reps 3 --cache-dir C:/JARVIS/models` |
-| Code | git `b991263` (clean tree) |
+| Code | git `37304f5` (clean tree). The raw file records `b991263`, the same commit's ID before the history rewrite of 2026-10-24 that removed private data; `scripts/bench_embed.py`, `embedder.py` and `config.py` are byte-identical between the two. |
 | Model | Qwen/Qwen3-Embedding-0.6B @ `97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3` |
 | Stack | torch 2.14.1+cu126, CUDA runtime 12.6, driver 580.88, Python 3.12.11 |
 | Hardware | Dell G3 3590, GTX 1660 Ti Max-Q 6 GB, on AC power |
