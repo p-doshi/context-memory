@@ -105,3 +105,33 @@ def test_optimize_compacts_fragments_and_keeps_rows(tmp_path):
     out = ls.optimize()
     assert out["small_fragments_after"] < out["small_fragments_before"]
     assert ls.count() == 40 and len(ls.search([1, 0, 0], 50)) == 40
+
+
+def test_in_memory_search_matches_lancedb_exactly(tmp_path):
+    import random
+    rnd = random.Random(0)
+    ls = LanceStore(tmp_path / "lance", dim=8, embedding_model="m")
+    rows = []
+    for i in range(300):
+        v = [rnd.gauss(0, 1) for _ in range(8)]
+        rows.append({"chunk_id": f"c{i}", "doc_id": f"d{i % 30}", "project": "p" if i % 3 else "q",
+                     "kind": "note" if i % 2 else "code", "embedding_model": "m",
+                     "is_current": i % 10 != 0, "vector": v})
+    ls.add(rows)
+    for _ in range(10):
+        q = [rnd.gauss(0, 1) for _ in range(8)]
+        for kw in ({}, {"project": "p"}, {"kinds": ["code"]}, {"include_retired": True}):
+            fast = ls.search(q, 20, **kw)
+            slow = ls._lance_search(q, 20, kw.get("project"), kw.get("kinds"), kw.get("include_retired", False))
+            assert [h["chunk_id"] for h in fast] == [h["chunk_id"] for h in slow]
+            assert all(abs(a["distance"] - b["distance"]) < 1e-4 for a, b in zip(fast, slow))
+
+
+def test_in_memory_cache_follows_new_versions_and_size_cap(tmp_path):
+    ls = LanceStore(tmp_path / "lance", dim=3, embedding_model="m")
+    ls.add([_row("a", [1, 0, 0])])
+    assert [h["chunk_id"] for h in ls.search([1, 0, 0], 5)] == ["a"]
+    ls.add([_row("b", [1, 0, 0])])
+    assert {h["chunk_id"] for h in ls.search([1, 0, 0], 5)} == {"a", "b"}
+    capped = LanceStore(tmp_path / "lance", dim=3, embedding_model="m", max_cache_rows=1)
+    assert capped._snapshot() is None and len(capped.search([1, 0, 0], 5)) == 2
