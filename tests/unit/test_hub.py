@@ -148,7 +148,7 @@ def test_context_endpoint_requires_token(client, svc):
     assert r.status_code == 200 and "proj-x" in r.json()["context"]
 
 
-def test_push_client_context_is_silent_when_hub_down(tmp_path):
+def test_push_client_context_notes_unreachable_hub(tmp_path):
     import subprocess
     import sys
     from pathlib import Path
@@ -157,4 +157,5 @@ def test_push_client_context_is_silent_when_hub_down(tmp_path):
            "CMH_HUB_URL": "http://127.0.0.1:9", "CMH_HUB_TOKEN": "x", "PATH": ""}
     p = subprocess.run([sys.executable, str(script), "context"], input=json.dumps({"cwd": "/a"}),
                        text=True, env=env, capture_output=True, timeout=15)
-    assert p.returncode == 0 and p.stdout == ""            # no output, no failure
+    assert p.returncode == 0                               # never fails the session
+    assert "not reachable" in json.loads(p.stdout)["hookSpecificOutput"]["additionalContext"]

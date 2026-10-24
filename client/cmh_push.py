@@ -163,8 +163,15 @@ def flush(cfg):
     QUEUE.write_text("".join(json.dumps(it) + "\n" for it in remaining))
 
 
+UNREACHABLE_NOTE = (
+    "Memory hub not reachable from this machine right now (its SSH tunnel is not up), so "
+    "the context-memory tools will fail this session. Do not try to open tunnels or change "
+    "SSH settings; tell the user the memory tunnel is down if memory is needed.")
+
+
 def fetch_context(cfg, cwd, timeout=3):
-    """Context pack for cwd from the hub; empty string if unreachable."""
+    """Context pack for cwd from the hub. If the hub cannot be reached, a one-line
+    note instead, so Claude does not guess at tunnels or configuration."""
     if not cfg.get("hub_url"):
         return ""
     from urllib.parse import quote
@@ -173,9 +180,12 @@ def fetch_context(cfg, cwd, timeout=3):
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode("utf-8")).get("context", "")
+    except urllib.error.HTTPError as e:
+        log(f"context fetch failed: {e}")
+        return ""  # hub reachable but refused (e.g. old token): stay silent, see push.log
     except (urllib.error.URLError, OSError, ValueError) as e:
         log(f"context fetch failed: {e}")
-        return ""
+        return UNREACHABLE_NOTE
 
 
 def emit_context(text):

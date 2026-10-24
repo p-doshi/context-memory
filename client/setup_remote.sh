@@ -55,15 +55,28 @@ md.write_text(text)
 print("memory guidance in", md)
 PY
 
-if command -v claude >/dev/null 2>&1; then
-  claude mcp remove --scope user context-memory >/dev/null 2>&1 || true
+# Non-interactive ssh shells often lack the PATH entries that make `claude`
+# available interactively, so look in the usual install locations too.
+CLAUDE_BIN="$(command -v claude 2>/dev/null || true)"
+if [ -z "$CLAUDE_BIN" ]; then
+  for c in ~/.local/bin/claude ~/.claude/local/claude ~/.npm-global/bin/claude \
+           ~/node_modules/.bin/claude ~/.nvm/versions/node/*/bin/claude ~/bin/claude; do
+    [ -x "$c" ] && CLAUDE_BIN="$c" && break
+  done
+fi
+if [ -z "$CLAUDE_BIN" ]; then
+  CLAUDE_BIN="$(bash -ilc 'command -v claude' 2>/dev/null | tail -1 || true)"
+fi
+if [ -n "$CLAUDE_BIN" ] && [ -x "$CLAUDE_BIN" ]; then
+  "$CLAUDE_BIN" mcp remove --scope user context-memory >/dev/null 2>&1 || true
   # Single quotes: the literal ${CMH_HUB_TOKEN} is stored and expanded by Claude Code.
-  claude mcp add --transport http --scope user context-memory "http://127.0.0.1:${PORT}/mcp" \
+  "$CLAUDE_BIN" mcp add --transport http --scope user context-memory "http://127.0.0.1:${PORT}/mcp" \
     --header 'Authorization: Bearer ${CMH_HUB_TOKEN}'
   echo "--- claude mcp list (context-memory should show as connected while the tunnel is up):"
-  claude mcp list 2>&1 | grep -i "context-memory" || true
+  "$CLAUDE_BIN" mcp list 2>&1 | grep -i "context-memory" || true
 else
-  echo "claude is not on PATH in this shell; run the 'claude mcp add' line from docs/remote-setup.md later."
+  echo "WARNING: claude not found; MCP server NOT registered. In a normal shell run:"
+  echo "  claude mcp add --transport http --scope user context-memory http://127.0.0.1:${PORT}/mcp --header 'Authorization: Bearer \${CMH_HUB_TOKEN}'"
 fi
 
 echo "--- push client:"
