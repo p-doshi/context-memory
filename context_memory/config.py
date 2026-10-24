@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     embedder: str = "qwen"
     embedding_model: str = "Qwen/Qwen3-Embedding-0.6B"
     # Hugging Face commit to load; pinning it keeps embeddings reproducible.
-    embedding_model_revision: str | None = None
+    embedding_model_revision: str | None = "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3"
     # Model download cache. None = the Hugging Face default (~/.cache/huggingface).
     model_dir: Path | None = None
     embedding_device: str | None = None  # None = cuda if available, else cpu
