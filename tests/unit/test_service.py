@@ -148,3 +148,26 @@ def test_retire_path_prefix_keeps_history(svc, settings):
     assert all("old/a.md" not in r["provenance"]["source_path"] for r in current)
     history = svc.memory_search("spectral loss", project="ocean", include_retired=True)["results"]
     assert any(r["provenance"]["verification_status"] == "stale" for r in history)
+
+
+def test_search_modes_bm25_finds_identifiers_hybrid_fuses(svc):
+    svc.memory_write(text="The flag is set by msvcrt_lock_guard in the daemon.", kind="code", project="p")
+    svc.memory_write(text="Prevents two background processes from running concurrently.", kind="note", project="p")
+    bm = svc.memory_search("msvcrt_lock_guard", project="p", mode="bm25")["results"]
+    assert bm and "msvcrt_lock_guard" in bm[0]["text"]
+    hy = svc.memory_search("msvcrt_lock_guard", project="p", mode="hybrid")
+    assert hy["mode"] == "hybrid" and len(hy["results"]) == 2
+    assert all(0 < r["score"] <= round(2 / 61, 4) for r in hy["results"])  # scores are rounded to 4 dp
+    with pytest.raises(ValueError):
+        svc.memory_search("x", mode="magic")
+
+
+def test_bm25_respects_retirement_and_punctuation(svc, settings):
+    f = settings.ingest_roots[0] / "a.md"
+    f.write_text("# A\nzebra_crossing alpha", encoding="utf-8")
+    ingest_markdown_file(svc, f, "p")
+    f.write_text("# A\nunrelated text", encoding="utf-8")
+    ingest_markdown_file(svc, f, "p")
+    assert svc.memory_search("zebra_crossing", mode="bm25")["results"] == []
+    assert svc.memory_search("zebra_crossing", mode="bm25", include_retired=True)["results"]
+    assert svc.memory_search('"; DROP TABLE chunks; --', mode="bm25")["results"] == []

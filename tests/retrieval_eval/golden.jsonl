@@ -1,0 +1,25 @@
+{"id": 1, "type": "identifier", "query": "audit_log_no_update trigger", "relevant_paths": ["context_memory/memory/sqlite_store.py"]}
+{"id": 2, "type": "identifier", "query": "BLOCKED_FILENAMES regex", "relevant_paths": ["context_memory/ingestion/sensitive_scanner.py"]}
+{"id": 3, "type": "identifier", "query": "_luhn_ok", "relevant_paths": ["context_memory/policy/disclosure.py"]}
+{"id": 4, "type": "identifier", "query": "current_leaf_message_uuid", "relevant_paths": ["context_memory/ingestion/claude_export.py"]}
+{"id": 5, "type": "identifier", "query": "list_user_collections", "relevant_paths": ["context_memory/browser/perplexity_web.py"]}
+{"id": 6, "type": "identifier", "query": "msvcrt.locking LK_NBLCK", "relevant_paths": ["context_memory/server/daemon.py"]}
+{"id": 7, "type": "identifier", "query": "distance_type cosine prefilter", "relevant_paths": ["context_memory/memory/lance_store.py"]}
+{"id": 8, "type": "identifier", "query": "class IngressRejected", "relevant_paths": ["context_memory/memory/service.py"]}
+{"id": 9, "type": "identifier", "query": "render_all_tools=true", "relevant_paths": ["context_memory/browser/claude_web.py"]}
+{"id": 10, "type": "identifier", "query": "processor_kwargs padding_side", "relevant_paths": ["context_memory/memory/embedder.py", "scripts/bench_embed.py"]}
+{"id": 11, "type": "identifier", "query": "HEADING_RE FENCE_RE", "relevant_paths": ["context_memory/memory/chunker.py"]}
+{"id": 12, "type": "identifier", "query": "--grid reduced", "relevant_paths": ["scripts/bench_embed.py", "docs/benchmarks/embedding-plan.md"]}
+{"id": 13, "type": "identifier", "query": "pytorch-cu126", "relevant_paths": ["pyproject.toml"]}
+{"id": 14, "type": "identifier", "query": "CMH_INGEST_ROOTS", "relevant_paths": ["README.md", "context_memory/ingestion/markdown.py"]}
+{"id": 15, "type": "identifier", "query": "BEGIN_UNTRUSTED_MEMORY", "relevant_paths": ["context_memory/memory/service.py", "docs/design-v0.2.md"]}
+{"id": 16, "type": "paraphrase", "query": "how does it stop two copies of the background indexer running at the same time", "relevant_paths": ["context_memory/server/daemon.py"]}
+{"id": 17, "type": "paraphrase", "query": "what happens to the old pieces of a file after the file is edited", "relevant_paths": ["context_memory/memory/service.py", "README.md"]}
+{"id": 18, "type": "paraphrase", "query": "why the database folder must not live in a synced cloud folder", "relevant_paths": ["docs/decisions/0001-storage-layout.md"]}
+{"id": 19, "type": "paraphrase", "query": "rules for which personal details may be shown to an external AI model", "relevant_paths": ["context_memory/policy/disclosure.py", "docs/design-v0.3-contextual-integrity.md"]}
+{"id": 20, "type": "paraphrase", "query": "example about selling a bike without giving buyers your home address", "relevant_paths": ["docs/design-v0.3-contextual-integrity.md"]}
+{"id": 26, "type": "paraphrase", "query": "memory and time limits for helper agents", "relevant_paths": ["docs/design-v0.2.md"]}
+{"id": 27, "type": "paraphrase", "query": "how the tool reads past Claude Code conversations from disk", "relevant_paths": ["context_memory/ingestion/claude_code.py"]}
+{"id": 28, "type": "paraphrase", "query": "splitting python source files into pieces at each function and class", "relevant_paths": ["context_memory/ingestion/code.py"]}
+{"id": 29, "type": "paraphrase", "query": "where passwords and API keys are stored", "relevant_paths": ["context_memory/secrets/broker.py", "docs/design-v0.2.md"]}
+{"id": 30, "type": "paraphrase", "query": "keeping the laptop running with the lid closed on mains power", "relevant_paths": ["scripts/install-daemon.ps1"]}

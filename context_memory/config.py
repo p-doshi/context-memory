@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     ingest_roots: list[Path] = Field(default_factory=list)
     max_file_bytes: int = 2_000_000
 
+    # vector | bm25 | hybrid. Stays "vector" until the retrieval evaluation
+    # (docs/benchmarks/retrieval-plan.md) says otherwise.
+    search_mode: str = "vector"
     default_search_k: int = 8
     max_search_k: int = 50
 

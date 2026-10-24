@@ -31,6 +31,10 @@ PROVENANCE_FIELDS = (
 
 LOCAL_RECIPIENTS = {"owner", "local_model"}
 
+SEARCH_MODES = {"vector", "bm25", "hybrid"}
+RRF_K = 60
+HYBRID_POOL = 50
+
 UNTRUSTED_OPEN = "BEGIN_UNTRUSTED_MEMORY"
 UNTRUSTED_CLOSE = "END_UNTRUSTED_MEMORY"
 
@@ -284,10 +288,38 @@ class MemoryService:
 
     # -- search --------------------------------------------------------------
 
+    def _rank(self, query: str, k: int, project, kinds, include_retired: bool,
+              mode: str) -> list[dict]:
+        """Ranked [{chunk_id, doc_id, score}] for one retrieval mode.
+
+        vector: cosine similarity. bm25: negated FTS5 BM25. hybrid: reciprocal
+        rank fusion (Cormack et al., SIGIR 2009, k=60) over the top
+        HYBRID_POOL of each, score = sum of 1/(60 + rank).
+        """
+        if mode == "vector":
+            hits = self.lance.search(self.embedder.embed_query(query), k, project, kinds,
+                                     include_retired)
+            return [{"chunk_id": h["chunk_id"], "doc_id": h["doc_id"],
+                     "score": 1.0 - h["distance"]} for h in hits]
+        if mode == "bm25":
+            return [{"chunk_id": h["chunk_id"], "doc_id": h["doc_id"], "score": h["bm25"]}
+                    for h in self.sqlite.bm25_search(query, k, project, kinds, include_retired)]
+        pool = max(k, HYBRID_POOL)
+        vec = self.lance.search(self.embedder.embed_query(query), pool, project, kinds,
+                                include_retired)
+        kw = self.sqlite.bm25_search(query, pool, project, kinds, include_retired)
+        fused: dict[str, dict] = {}
+        for ranking in (vec, kw):
+            for rank, h in enumerate(ranking, 1):
+                entry = fused.setdefault(h["chunk_id"], {"chunk_id": h["chunk_id"],
+                                                         "doc_id": h["doc_id"], "score": 0.0})
+                entry["score"] += 1.0 / (RRF_K + rank)
+        return sorted(fused.values(), key=lambda e: e["score"], reverse=True)[:k]
+
     def memory_search(self, query: str, project: str | None = None,
                       kinds: list[str] | None = None, k: int | None = None,
                       include_retired: bool = False, actor: str = "mcp",
-                      recipient: str = "owner") -> dict:
+                      recipient: str = "owner", mode: str | None = None) -> dict:
         """Retrieve chunks for `recipient` (see policy.disclosure.RECIPIENTS).
 
         Every result passes the Disclosure Gate for that recipient, and
@@ -300,7 +332,8 @@ class MemoryService:
             validate_choice(kind, KINDS, "kind")
         k = max(1, min(k or self.settings.default_search_k, self.settings.max_search_k))
 
-        hits = self.lance.search(self.embedder.embed_query(query), k, project, kinds, include_retired)
+        mode = validate_choice(mode or self.settings.search_mode, SEARCH_MODES, "mode")
+        hits = self._rank(query, k, project, kinds, include_retired, mode)
         records = self.sqlite.get_chunks([h["chunk_id"] for h in hits])
         docs: dict[str, dict | None] = {}
 
@@ -358,7 +391,7 @@ class MemoryService:
                         key = f"{v['tier']}:{v['kind']}"
                         disclosure["attributes"][key] = disclosure["attributes"].get(key, 0) + v["count"]
             results.append({
-                "score": round(1.0 - h["distance"], 4),
+                "score": round(h["score"], 4),
                 "project": rec["project"],
                 "kind": rec["kind"],
                 "title": gated["title"].text or None,
@@ -390,9 +423,10 @@ class MemoryService:
             })
         self.sqlite.audit(actor, "search", project, "ok",
                           {"query_chars": len(query), "k": k, "returned": len(results),
-                           "recipient": recipient})
+                           "recipient": recipient, "mode": mode})
         return {
             "query": query,
+            "mode": mode,
             "results": results,
             "verification": {"verified": 0,
                              "unverified": sum(r["provenance"]["verification_status"] == "unverified" for r in results),

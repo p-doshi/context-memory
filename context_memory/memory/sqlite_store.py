@@ -7,6 +7,7 @@ what vector search needs, and search results are hydrated from here.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
@@ -14,7 +15,21 @@ from typing import Any, Iterator
 
 from context_memory.util import utcnow
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+
+# v2: full-text index over chunks, kept in step by a trigger. Retired chunks
+# stay indexed and are filtered by joining on chunks.valid_to.
+FTS_SCHEMA = """
+CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
+  text, title, section_path, chunk_id UNINDEXED,
+  tokenize = 'unicode61 remove_diacritics 2'
+);
+CREATE TRIGGER IF NOT EXISTS chunks_fts_insert AFTER INSERT ON chunks
+BEGIN
+  INSERT INTO chunks_fts (text, title, section_path, chunk_id)
+  VALUES (new.text, coalesce(new.title, ''), coalesce(new.section_path, ''), new.chunk_id);
+END;
+"""
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS ingestion_jobs (
@@ -157,6 +172,12 @@ class SQLiteStore:
                 f"database schema v{version} is newer than this code (v{SCHEMA_VERSION})"
             )
         self.conn.executescript(SCHEMA)
+        if version < 2:
+            self.conn.executescript(FTS_SCHEMA)
+            self.conn.execute(
+                "INSERT INTO chunks_fts (text, title, section_path, chunk_id) "
+                "SELECT text, coalesce(title, ''), coalesce(section_path, ''), chunk_id FROM chunks "
+                "WHERE chunk_id NOT IN (SELECT chunk_id FROM chunks_fts)")
         self.conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
     def close(self) -> None:
@@ -248,6 +269,36 @@ class SQLiteStore:
             return {}
         q = f"SELECT * FROM chunks WHERE chunk_id IN ({', '.join('?' * len(chunk_ids))})"
         return {r["chunk_id"]: _row_to_dict(r) for r in self.conn.execute(q, chunk_ids)}
+
+    def bm25_search(self, query: str, k: int, project: str | None = None,
+                    kinds: list[str] | None = None, include_retired: bool = False) -> list[dict]:
+        """BM25 over chunk text/title/section. Each query word becomes a term;
+        identifiers like audit_log_no_update become phrases of their parts."""
+        terms = []
+        for word in query.split():
+            parts = re.findall(r"[A-Za-z0-9]+", word)
+            if len(parts) == 1:
+                terms.append(f'"{parts[0]}"')
+            elif parts:
+                terms.append('"' + " ".join(parts) + '"')
+        if not terms:
+            return []
+        sql = ("SELECT c.chunk_id, c.doc_id, bm25(chunks_fts) AS score FROM chunks_fts "
+               "JOIN chunks c ON c.chunk_id = chunks_fts.chunk_id WHERE chunks_fts MATCH ?")
+        params: list = [" OR ".join(terms)]
+        if not include_retired:
+            sql += " AND c.valid_to IS NULL"
+        if project:
+            sql += " AND c.project = ?"
+            params.append(project)
+        if kinds:
+            sql += f" AND c.kind IN ({', '.join('?' * len(kinds))})"
+            params += kinds
+        sql += " ORDER BY score LIMIT ?"
+        params.append(k)
+        # bm25() is lower-is-better; expose it negated so higher is better.
+        return [{"chunk_id": r[0], "doc_id": r[1], "bm25": -r[2]}
+                for r in self.conn.execute(sql, params)]
 
     def chunk_ids(self, current_only: bool = False) -> set[str]:
         q = "SELECT chunk_id FROM chunks" + (" WHERE valid_to IS NULL" if current_only else "")
