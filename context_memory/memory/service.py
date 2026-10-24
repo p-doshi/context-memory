@@ -71,6 +71,26 @@ class MemoryService:
     def close(self) -> None:
         self.sqlite.close()
 
+    def retire_path_prefix(self, prefix: str, actor: str = "cli") -> dict:
+        """Retire every current chunk of documents whose path starts with prefix
+        (e.g. a source folder that was removed). History is kept: chunks get
+        valid_to and show as stale with include_retired."""
+        rows = self.sqlite.conn.execute(
+            "SELECT doc_id FROM documents WHERE path LIKE ? ESCAPE '\\'",
+            (prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%",),
+        ).fetchall()
+        now = utcnow()
+        retired = 0
+        for (doc_id,) in rows:
+            ids = self.sqlite.current_chunk_ids(doc_id)
+            with self.sqlite.transaction() as conn:
+                self.sqlite.retire_chunks(conn, ids, now, superseded_by_doc_version="source-removed")
+                self.lance.retire(ids)
+            retired += len(ids)
+        out = {"documents": len(rows), "chunks_retired": retired}
+        self.sqlite.audit(actor, "retire", prefix, "ok", out)
+        return out
+
     def reconcile(self, actor: str = "daemon") -> dict:
         """Repair disagreement between the stores after a crash or power loss.
 

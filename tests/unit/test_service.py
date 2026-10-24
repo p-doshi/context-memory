@@ -133,3 +133,18 @@ def test_lance_failure_rolls_back_sqlite(svc, monkeypatch):
         svc.memory_write(text="will not persist", kind="note", project="ocean")
     assert svc.sqlite.stats()["documents"] == 0
     assert svc.sqlite.stats()["chunks_current"] == 0
+
+
+def test_retire_path_prefix_keeps_history(svc, settings):
+    root = settings.ingest_roots[0]
+    (root / "old").mkdir()
+    (root / "old" / "a.md").write_text("# A\nspectral loss notes", encoding="utf-8")
+    (root / "keep.md").write_text("# K\nspectral loss decision", encoding="utf-8")
+    for f in (root / "old" / "a.md", root / "keep.md"):
+        ingest_markdown_file(svc, f, "ocean")
+    out = svc.retire_path_prefix((root / "old").resolve().as_posix())
+    assert out["documents"] == 1 and out["chunks_retired"] >= 1
+    current = svc.memory_search("spectral loss", project="ocean")["results"]
+    assert all("old/a.md" not in r["provenance"]["source_path"] for r in current)
+    history = svc.memory_search("spectral loss", project="ocean", include_retired=True)["results"]
+    assert any(r["provenance"]["verification_status"] == "stale" for r in history)

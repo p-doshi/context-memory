@@ -61,6 +61,9 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--title")
     s.add_argument("--tag", action="append", dest="tags")
 
+    s = sub.add_parser("retire", help="retire indexed documents under a path prefix")
+    s.add_argument("prefix", help="e.g. C:/old/folder (paths are stored with forward slashes)")
+
     sub.add_parser("stats", help="store statistics")
     sub.add_parser("status", help="daemon heartbeat and store statistics")
     s = sub.add_parser("audit", help="show recent audit log entries")
@@ -214,6 +217,8 @@ def main(argv: list[str] | None = None) -> int:
         elif args.cmd == "write":
             _print(svc.memory_write(text=args.text, kind=args.kind, project=args.project,
                                     title=args.title, tags=args.tags, actor="cli"))
+        elif args.cmd == "retire":
+            _print(svc.retire_path_prefix(args.prefix.replace("\\", "/")))
         elif args.cmd == "stats":
             _print({**svc.sqlite.stats(), "vectors": svc.lance.count(),
                     "embedding_model": svc.embedder.model_name,
