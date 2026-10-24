@@ -38,6 +38,8 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("path", type=Path)
     s.add_argument("--project", required=True)
     s.add_argument("--max-files", type=int, default=2000)
+    s.add_argument("--force", action="store_true",
+                   help="re-chunk and re-embed unchanged files (after a chunker change)")
 
     s = sub.add_parser("ingest-claude", help="ingest Claude Code session logs")
     s.add_argument("--config-dir", type=Path, default=Path.home() / ".claude")
@@ -225,6 +227,11 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 _print(ingest_markdown_file(svc, args.path, args.project))
         elif args.cmd == "ingest-code":
+            if args.force:
+                prefix = args.path.resolve().as_posix().rstrip("/") + "/"
+                for (doc_id,) in svc.sqlite.conn.execute(
+                        "SELECT doc_id FROM documents WHERE path LIKE ?", (prefix + "%",)).fetchall():
+                    svc.sqlite.forget_document(doc_id)
             res = ingest_codebase(svc, args.path, args.project, args.max_files, actor="cli")
             _print({"summary": _summary(res),
                     "problems": [r for r in res if r["status"] in ("rejected", "stopped")]})
