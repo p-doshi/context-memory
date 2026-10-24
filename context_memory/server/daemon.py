@@ -170,10 +170,41 @@ def process_inbox(svc, inbox: Path, sources) -> dict:
     return summary
 
 
+def _attach_std_streams(log_dir: Path) -> None:
+    """Under pythonw (the scheduled task) sys.stdout/stderr are None, and any
+    library that logs to them (uvicorn, the MCP SDK) crashes its thread
+    silently. Point them at a file and log uncaught thread exceptions."""
+    if sys.stdout is None or sys.stderr is None:
+        stream = open(log_dir / "daemon-stderr.log", "a", buffering=1, encoding="utf-8")
+        sys.stdout = sys.stdout or stream
+        sys.stderr = sys.stderr or stream
+
+    def excepthook(args):
+        log.error("thread %s crashed", args.thread.name if args.thread else "?",
+                  exc_info=(args.exc_type, args.exc_value, args.exc_traceback))
+    threading.excepthook = excepthook
+
+
+def _wait_for_hub(port: int, timeout: float = 30.0) -> bool:
+    import urllib.error
+    import urllib.request
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            urllib.request.urlopen(f"http://127.0.0.1:{port}/v1/health", timeout=2)
+            return True
+        except urllib.error.HTTPError as e:
+            return e.code == 401  # serving, and refusing an unauthenticated probe
+        except OSError:
+            time.sleep(0.5)
+    return False
+
+
 def main(settings: Settings | None = None, once: bool = False) -> int:
     settings = settings or get_settings()
     home = settings.data_dir.parent
     _setup_logging(home / "logs")
+    _attach_std_streams(home / "logs")
     stop = {"flag": False}
 
     def _stop(*_):
@@ -195,7 +226,11 @@ def main(settings: Settings | None = None, once: bool = False) -> int:
             from context_memory.server import tunnels as tunnel_mod
             from context_memory.server.hub import start_in_thread
             start_in_thread(settings, svc.embedder)
-            log.info("hub listening on %s:%d", settings.hub_host, settings.hub_port)
+            if _wait_for_hub(settings.hub_port):
+                log.info("hub serving on %s:%d", settings.hub_host, settings.hub_port)
+            else:
+                log.error("hub did not come up on %s:%d (see daemon-stderr.log)",
+                          settings.hub_host, settings.hub_port)
             tunnel_stop = threading.Event()
             tunnels = tunnel_mod.start(settings.hub_tunnels, settings.hub_port, tunnel_stop)
         heartbeat = home / "run" / "heartbeat.json"
