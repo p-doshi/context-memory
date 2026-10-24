@@ -23,6 +23,7 @@ from pathlib import Path
 
 from context_memory.config import Settings, get_settings
 from context_memory.ingestion.claude_code import ingest_config_dir
+from context_memory.ingestion.claude_export import import_export
 from context_memory.ingestion.code import ingest_codebase
 from context_memory.ingestion.markdown import ingest_markdown_dir
 from context_memory.sources import load_sources
@@ -92,6 +93,32 @@ def run_pass(svc, settings: Settings) -> dict:
     for src in sources.docs:
         res = ingest_markdown_dir(svc, src.path, src.project, src.max_files, actor="daemon")
         summary[f"docs:{src.project}"] = _summarize(res)
+
+    summary.update(process_inbox(svc, settings.data_dir.parent / "inbox", sources))
+    return summary
+
+
+def process_inbox(svc, inbox: Path, sources) -> dict:
+    """Import exports dropped into <home>/inbox/<account-label>/, then move them to done/."""
+    summary: dict[str, dict] = {}
+    for acct in sources.accounts:
+        folder = inbox / acct.label
+        folder.mkdir(parents=True, exist_ok=True)
+        for f in sorted(folder.iterdir()):
+            if not f.is_file() or f.suffix.lower() not in (".zip", ".json"):
+                continue
+            if acct.provider != "claude":
+                log.warning("inbox %s: no importer for provider %s yet", f, acct.provider)
+                continue
+            try:
+                res = import_export(svc, f, acct.label)
+            except Exception:
+                log.exception("inbox import failed: %s", f)
+                continue
+            done = folder / "done"
+            done.mkdir(exist_ok=True)
+            f.replace(done / f"{time.strftime('%Y%m%d-%H%M%S')}-{f.name}")
+            summary[f"inbox:{acct.label}:{f.name}"] = _summarize(res)
     return summary
 
 

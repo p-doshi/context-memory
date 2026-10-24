@@ -142,3 +142,25 @@ project = "context-memory"
     assert s.codebases[0].project == "context-memory"
     assert s.claude_project_map == {"c--Users-X-SAR": "sar"}
     assert load_sources(tmp_path / "missing.toml").accounts == []
+
+
+def test_claude_export_zip_import_and_single_store(svc, tmp_path):
+    import zipfile
+    from context_memory.ingestion.claude_export import import_export
+    convs = [{
+        "uuid": "conv-1", "name": "Mooring design", "created_at": "2026-09-01T10:00:00Z",
+        "chat_messages": [
+            {"uuid": "m1", "sender": "human", "created_at": "2026-09-01T10:00:00Z",
+             "content": [{"type": "text", "text": "Which hydrophone mooring depth?"}]},
+            {"uuid": "m2", "sender": "assistant", "text": "Use 150 m for the shelf site."},
+        ]}, {"uuid": "conv-2", "name": "empty", "chat_messages": []}]
+    z = tmp_path / "data-export.zip"
+    with zipfile.ZipFile(z, "w") as zf:
+        zf.writestr("conversations.json", json.dumps(convs))
+    res = import_export(svc, z, "claude-personal")
+    assert [r["status"] for r in res] == ["created", "empty"]
+    # Same store as Claude Code sessions: one search spans both.
+    svc.memory_write(text="Hydrophone mooring decided at 150 m.", kind="decision", project="acoustics")
+    hits = svc.memory_search("hydrophone mooring depth")["results"]
+    assert {h["provenance"]["source_type"] for h in hits} >= {"chat", "decision_record"}
+    assert "account:claude-personal" in next(h for h in hits if h["kind"] == "chat")["tags"]
