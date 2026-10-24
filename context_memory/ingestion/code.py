@@ -63,16 +63,34 @@ def _python_units(source: str) -> list[tuple[int, int, str]]:
     if first_def > 0:
         end = body[first_def].lineno - 1 if first_def < len(body) else n_lines
         units.append((1, max(1, end), "module"))
+    def _start(node) -> int:
+        return min([node.lineno] + [d.lineno for d in getattr(node, "decorator_list", [])])
+
     for node in body[first_def:]:
-        start = min([node.lineno] + [d.lineno for d in getattr(node, "decorator_list", [])])
+        start, end = _start(node), node.end_lineno or node.lineno
         if isinstance(node, ast.ClassDef):
-            label = f"class {node.name}"
+            # Split classes at method boundaries so every window starts at a
+            # def (parseable after dedent); packing re-merges small units.
+            methods = [n for n in node.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+            if not methods:
+                units.append((start, end, f"class {node.name}"))
+                continue
+            units.append((start, _start(methods[0]) - 1, f"class {node.name}"))
+            for i, m in enumerate(methods):
+                m_end = _start(methods[i + 1]) - 1 if i + 1 < len(methods) else end
+                units.append((_start(m), m_end, f"method {node.name}.{m.name}"))
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            label = f"def {node.name}"
+            units.append((start, end, f"def {node.name}"))
         else:
-            label = "module"
-        units.append((start, node.end_lineno or start, label))
+            units.append((start, end, "module"))
     return units
+
+
+def _scope(label: str) -> str:
+    """Packing never mixes a class's methods with code outside that class."""
+    if label.startswith("method "):
+        return "class " + label[len("method "):].split(".")[0]
+    return label if label.startswith("class ") else "top"
 
 
 def _block_units(source: str) -> list[tuple[int, int, str]]:
@@ -103,6 +121,7 @@ def make_code_chunker(path: Path, count_tokens: Callable[[str], int],
 
         chunks: list[Chunk] = []
         cur_start = cur_end = None
+        cur_scope = "top"
         labels: list[str] = []
         # Prefix sums of per-line token counts (+1 per newline): span(s, e) is
         # the token estimate for lines s..e (1-based, inclusive) in O(1).
@@ -135,11 +154,12 @@ def make_code_chunker(path: Path, count_tokens: Callable[[str], int],
                     emit(s, e, [label])
                     s = e + 1
                 continue
-            if cur_start and span(cur_start, end) > max_tokens:
+            if cur_start and (span(cur_start, end) > max_tokens or _scope(label) != cur_scope):
                 emit(cur_start, cur_end, labels)
                 cur_start, labels = None, []
             cur_start = cur_start or start
             cur_end = end
+            cur_scope = _scope(label)
             labels.append(label)
         if cur_start:
             emit(cur_start, cur_end, labels)

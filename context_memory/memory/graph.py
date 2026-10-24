@@ -100,6 +100,12 @@ class Graph:
         m = self.entity(module, "module")
         self.edge(file_entity, m, "defines", chunks[0]["chunk_id"])
         for c in chunks:
+            # Definitions from the chunk label, which the chunker took from a
+            # full-file parse: this covers windows of long methods that cannot
+            # be parsed on their own.
+            for kind, name in _LABEL_DEF.findall(c.get("section_path") or ""):
+                etype = {"def": "function", "class": "class", "method": "method"}[kind]
+                self.edge(m, self.entity(f"{module}.{name}", etype, project), "defines", c["chunk_id"])
             tree, owner = _parse_chunk(c)
             if tree is None:
                 continue
@@ -205,7 +211,8 @@ class Graph:
         }
 
 
-_CLASS_LABEL = re.compile(r"\bclass (\w+)")
+_CLASS_LABEL = re.compile(r"\b(?:class|method) (\w+)")
+_LABEL_DEF = re.compile(r"\b(def|class|method) ([\w.]+)")
 
 
 def _parse_chunk(chunk: dict) -> tuple[ast.Module | None, str | None]:
