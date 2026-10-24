@@ -85,3 +85,23 @@ def test_v1_database_migrates_and_backfills_fts(tmp_path):
     db = SQLiteStore(path)
     assert db.conn.execute("PRAGMA user_version").fetchone()[0] == 2
     assert [h["chunk_id"] for h in db.bm25_search("audit_log_no_update", 5)] == ["c"]
+
+
+def test_second_connection_sees_new_writes(tmp_path):
+    import time
+    writer = LanceStore(tmp_path / "lance", dim=3, embedding_model="m")
+    writer.add([_row("first", [1, 0, 0])])
+    reader = LanceStore(tmp_path / "lance", dim=3, embedding_model="m")  # e.g. the hub
+    writer.add([_row("second", [1, 0, 0])])
+    time.sleep(1.2)  # consistency interval is 1 s
+    assert {h["chunk_id"] for h in reader.search([1, 0, 0], 10)} == {"first", "second"}
+
+
+def test_optimize_compacts_fragments_and_keeps_rows(tmp_path):
+    ls = LanceStore(tmp_path / "lance", dim=3, embedding_model="m")
+    for i in range(40):
+        ls.add([_row(f"c{i}", [1, 0, i / 40])])
+    assert ls.small_fragments() >= 32
+    out = ls.optimize()
+    assert out["small_fragments_after"] < out["small_fragments_before"]
+    assert ls.count() == 40 and len(ls.search([1, 0, 0], 50)) == 40

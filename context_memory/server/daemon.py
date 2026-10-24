@@ -97,6 +97,10 @@ def run_pass(svc, settings: Settings) -> dict:
 
     summary.update(process_inbox(svc, settings.data_dir.parent / "inbox", sources))
     summary.update(browser_syncs(svc, settings, sources))
+    # Every ingest appends a small LanceDB fragment; vector search slows as they
+    # pile up (456 fragments: ~100 ms per search, measured). Compact regularly.
+    if svc.lance.small_fragments() >= 32:
+        summary["lance_optimize"] = svc.lance.optimize()
     return summary
 
 

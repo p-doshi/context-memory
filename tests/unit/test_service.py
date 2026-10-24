@@ -171,3 +171,13 @@ def test_bm25_respects_retirement_and_punctuation(svc, settings):
     assert svc.memory_search("zebra_crossing", mode="bm25")["results"] == []
     assert svc.memory_search("zebra_crossing", mode="bm25", include_retired=True)["results"]
     assert svc.memory_search('"; DROP TABLE chunks; --', mode="bm25")["results"] == []
+
+
+def test_bm25_ignores_stopwords_and_keeps_filters(svc):
+    svc.memory_write(text="The hydrophone mooring uses a 150 m line.", kind="note", project="ocean")
+    svc.memory_write(text="The website uses WordPress.", kind="note", project="web")
+    assert svc.memory_search("what is the", mode="bm25")["results"] == []  # stopwords only
+    hits = svc.memory_search("how deep is the hydrophone mooring", mode="bm25")["results"]
+    assert hits and "hydrophone" in hits[0]["text"]
+    assert svc.memory_search("hydrophone", mode="bm25", project="web")["results"] == []
+    assert svc.memory_search("hydrophone", mode="bm25")["timings_ms"]["bm25"] >= 0

@@ -6,6 +6,7 @@ lives in SQLite; callers hydrate results by chunk_id.
 
 from __future__ import annotations
 
+from datetime import timedelta
 from pathlib import Path
 
 import lancedb
@@ -24,7 +25,10 @@ class LanceStore:
         self.path.mkdir(parents=True, exist_ok=True)
         self.dim = dim
         self.embedding_model = embedding_model
-        self.db = lancedb.connect(str(self.path))
+        # The daemon and the hub write/read through separate connections. Without
+        # a consistency interval a connection keeps reading the table version it
+        # opened and never sees later writes (measured). Re-check every second.
+        self.db = lancedb.connect(str(self.path), read_consistency_interval=timedelta(seconds=1))
         self.table = self._open_or_create()
 
     def _schema(self) -> pa.Schema:
@@ -89,6 +93,20 @@ class LanceStore:
 
     def count(self) -> int:
         return self.table.count_rows()
+
+    def small_fragments(self) -> int:
+        try:
+            return int(self.table.stats()["fragment_stats"]["num_small_fragments"])
+        except Exception:
+            return 0
+
+    def optimize(self) -> dict:
+        """Compact small fragments (each ingest appends one) and drop versions
+        older than an hour. The hour leaves other connections, which refresh
+        every second, far from ever reading a deleted file."""
+        before = self.small_fragments()
+        self.table.optimize(cleanup_older_than=timedelta(hours=1))
+        return {"small_fragments_before": before, "small_fragments_after": self.small_fragments()}
 
     def ids(self, current_only: bool = False) -> set[str]:
         tbl = self.table.to_arrow()
