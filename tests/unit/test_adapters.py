@@ -273,4 +273,23 @@ def test_graph_rebuild_is_idempotent(svc):
     svc.memory_write(text="alpha", kind="note", project="p")
     first = svc.rebuild_graph()
     second = svc.rebuild_graph()
-    assert second["edges_added"] == 0 and second["edges_current"] == first["edges_current"]
+    assert second["edges_current"] == first["edges_current"] > 0
+    assert second["entities"] == first["entities"]
+
+
+def test_graph_methods_and_global_modules(svc, settings):
+    from context_memory.ingestion.code import ingest_code_file
+    root = settings.ingest_roots[0]
+    (root / "pkg").mkdir()
+    body = "\n".join(f"    def m{i}(self):\n        return {i}\n" for i in range(60))
+    (root / "pkg" / "big.py").write_text("class Big:\n" + body, encoding="utf-8")
+    (root / "pkg" / "user.py").write_text("import pkg.big\n", encoding="utf-8")
+    ingest_code_file(svc, root / "pkg" / "big.py", "p", root)
+    ingest_code_file(svc, root / "pkg" / "user.py", "p", root)
+    g = svc.graph
+    names = {e["name"] for e in g.find("pkg.big.Big.m", limit=100)}
+    assert "pkg.big.Big.m59" in names  # methods from later windows of the class
+    mods = [e for e in g.find("pkg.big", limit=100) if e["name"] == "pkg.big"]
+    assert len(mods) == 1  # defined and imported module resolve to one node
+    rels = {(e["relation"], e["src_name"]) for e in g.neighbors(mods[0]["entity_id"])["edges"]}
+    assert ("imports", "pkg.user") in rels

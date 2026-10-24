@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import ast
 import re
+import textwrap
 from pathlib import PurePosixPath
 
 from context_memory.memory.sqlite_store import SQLiteStore
@@ -93,18 +94,20 @@ class Graph:
         return self._edge_count() - n0
 
     def _python(self, doc: dict, chunks: list[dict], file_entity: str, project: str) -> None:
+        # Module entities are global (project None) so a module defined in one
+        # file and imported elsewhere resolves to the same node.
         module = _module_name(doc.get("title") or doc["path"])
-        m = self.entity(module, "module", project)
+        m = self.entity(module, "module")
         self.edge(file_entity, m, "defines", chunks[0]["chunk_id"])
         for c in chunks:
-            try:
-                tree = ast.parse(c["text"])
-            except SyntaxError:
+            tree, owner = _parse_chunk(c)
+            if tree is None:
                 continue
             for node in tree.body:
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                     kind = "class" if isinstance(node, ast.ClassDef) else "function"
-                    s = self.entity(f"{module}.{node.name}", kind, project)
+                    qual = f"{module}.{owner}.{node.name}" if owner else f"{module}.{node.name}"
+                    s = self.entity(qual, "method" if owner else kind, project)
                     self.edge(m, s, "defines", c["chunk_id"])
                 elif isinstance(node, ast.Import):
                     for alias in node.names:
@@ -166,6 +169,31 @@ class Graph:
                 for e in edges_out}
         return {"entity_id": entity_id, "edges": list(uniq.values())[:limit]}
 
+    def rebuild(self) -> dict:
+        """Wipe and re-derive the graph from all chunks. Edges from retired
+        chunks are re-created with the chunk's valid_to, so history survives."""
+        docs = [r[0] for r in self.db.conn.execute("SELECT doc_id FROM documents")]
+        with self.db.transaction():
+            self.db.conn.execute("DELETE FROM edges")
+            self.db.conn.execute("DELETE FROM entities")
+        for doc_id in docs:
+            doc = self.db.get_document(doc_id)
+            rows = self.db.conn.execute(
+                "SELECT chunk_id FROM chunks WHERE doc_id = ? ORDER BY ingestion_job_id, ordinal",
+                (doc_id,)).fetchall()
+            all_chunks = self.db.get_chunks([r[0] for r in rows])
+            by_version: dict[str, list[dict]] = {}
+            for c in all_chunks.values():
+                by_version.setdefault(c["ingestion_job_id"], []).append(c)
+            with self.db.transaction():
+                for version in by_version.values():
+                    version.sort(key=lambda c: c["ordinal"])
+                    self.index_document(doc, version)
+                    for c in version:
+                        if c["valid_to"]:
+                            self.retire_evidence([c["chunk_id"]], c["valid_to"])
+        return {"documents": len(docs), **self.stats()}
+
     def stats(self) -> dict:
         one = lambda q: self.db.conn.execute(q).fetchone()[0]  # noqa: E731
         return {
@@ -175,6 +203,25 @@ class Graph:
             "by_relation": dict(self.db.conn.execute(
                 "SELECT relation, COUNT(*) FROM edges WHERE valid_to IS NULL GROUP BY relation").fetchall()),
         }
+
+
+_CLASS_LABEL = re.compile(r"\bclass (\w+)")
+
+
+def _parse_chunk(chunk: dict) -> tuple[ast.Module | None, str | None]:
+    """Parse a code chunk. Windows from inside a large class start indented;
+    dedent them and report the owning class (from the section label) so
+    methods get qualified names. Returns (None, None) if it still fails."""
+    try:
+        return ast.parse(chunk["text"]), None
+    except SyntaxError:
+        pass
+    try:
+        tree = ast.parse(textwrap.dedent(chunk["text"]))
+    except SyntaxError:
+        return None, None
+    m = _CLASS_LABEL.search(chunk.get("section_path") or "")
+    return tree, (m.group(1) if m else None)
 
 
 def _module_name(rel_path: str) -> str:

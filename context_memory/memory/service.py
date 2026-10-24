@@ -100,16 +100,9 @@ class MemoryService:
 
     def rebuild_graph(self, actor: str = "cli") -> dict:
         """(Re)extract graph edges for every document's current chunks."""
-        docs = [r[0] for r in self.sqlite.conn.execute("SELECT doc_id FROM documents")]
-        added = 0
-        for doc_id in docs:
-            doc = self.sqlite.get_document(doc_id)
-            chunks = sorted(self.sqlite.get_chunks(self.sqlite.current_chunk_ids(doc_id)).values(),
-                            key=lambda c: c["ordinal"])
-            with self.sqlite.transaction():
-                added += self.graph.index_document(doc, chunks)
-        out = {"documents": len(docs), "edges_added": added, **self.graph.stats()}
-        self.sqlite.audit(actor, "graph_rebuild", None, "ok", {"documents": len(docs), "edges_added": added})
+        out = self.graph.rebuild()
+        self.sqlite.audit(actor, "graph_rebuild", None, "ok",
+                          {"documents": out["documents"], "edges": out["edges_current"]})
         return out
 
     def reconcile(self, actor: str = "daemon") -> dict:

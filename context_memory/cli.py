@@ -131,6 +131,38 @@ def main(argv: list[str] | None = None) -> int:
             "accounts": [{**a.__dict__, "secret_stored": a.label in names} for a in src.accounts],
         })
         return 0
+    if args.cmd == "graph":
+        # SQLite only: no embedding model, so it can run beside the daemon.
+        from context_memory.memory.graph import Graph
+        from context_memory.memory.sqlite_store import SQLiteStore
+        db = SQLiteStore(settings.sqlite_path)
+        g = Graph(db)
+        try:
+            if args.action == "rebuild":
+                out = g.rebuild()
+                db.audit("cli", "graph_rebuild", None, "ok",
+                         {"documents": out["documents"], "edges": out["edges_current"]})
+                _print(out)
+            elif args.action == "stats":
+                _print(g.stats())
+            elif not args.name:
+                print("error: entity name required", file=sys.stderr)
+                return 2
+            elif args.action == "find":
+                _print(g.find(args.name))
+            else:
+                hits = g.find(args.name, limit=1)
+                if not hits:
+                    print(f"no entity matching {args.name!r}", file=sys.stderr)
+                    return 1
+                res = g.neighbors(hits[0]["entity_id"], args.relation, args.depth)
+                print(f"{hits[0]['type']} {hits[0]['name']}")
+                for e in res["edges"]:
+                    print(f"  {e['src_type']}:{e['src_name']} -{e['relation']}-> "
+                          f"{e['dst_type']}:{e['dst_name']}")
+        finally:
+            db.close()
+        return 0
     if args.cmd == "browser":
         from context_memory.browser import session
         from context_memory.sources import load_sources
@@ -223,27 +255,6 @@ def main(argv: list[str] | None = None) -> int:
         elif args.cmd == "write":
             _print(svc.memory_write(text=args.text, kind=args.kind, project=args.project,
                                     title=args.title, tags=args.tags, actor="cli"))
-        elif args.cmd == "graph":
-            g = svc.graph
-            if args.action == "rebuild":
-                _print(svc.rebuild_graph())
-            elif args.action == "stats":
-                _print(g.stats())
-            elif not args.name:
-                print("error: entity name required", file=sys.stderr)
-                return 2
-            elif args.action == "find":
-                _print(g.find(args.name))
-            else:
-                hits = g.find(args.name, limit=1)
-                if not hits:
-                    print(f"no entity matching {args.name!r}", file=sys.stderr)
-                    return 1
-                res = g.neighbors(hits[0]["entity_id"], args.relation, args.depth)
-                print(f"{hits[0]['type']} {hits[0]['name']}")
-                for e in res["edges"]:
-                    print(f"  {e['src_type']}:{e['src_name']} -{e['relation']}-> "
-                          f"{e['dst_type']}:{e['dst_name']}")
         elif args.cmd == "retire":
             _print(svc.retire_path_prefix(args.prefix.replace("\\", "/")))
         elif args.cmd == "stats":
