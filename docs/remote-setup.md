@@ -117,6 +117,19 @@ SessionEnd's 1.5-second default budget. `hook-start` sends anything missed
 (SessionEnd is not documented to fire on crashes or dropped connections). Claude
 Code withholds hooks until you accept the folder's workspace trust dialog.
 
+## Automatic memory preamble
+
+Every Claude Code session on a configured machine starts with a short context pack
+for its working directory (recent sessions, recorded decisions and documents of the
+matching project, about 500-2,400 characters), injected by the SessionStart hook,
+plus the memory guidance in `~/.claude/CLAUDE.md`. Nothing has to be run per session.
+If the hub is unreachable the hook prints nothing and the session starts normally.
+
+- Linux/macOS machines: the bundle above sets this up.
+- Windows machines: `python client/setup_local.py --config-dir <dir> ...` with
+  `CMH_HUB_TOKEN` (and `CMH_HUB_URL` if not the default) set as user environment
+  variables. It configures each Claude config directory given (one per account).
+
 ## Security notes
 
 - Transport: SSH end to end. The HTTP inside the tunnel is unencrypted only on the
