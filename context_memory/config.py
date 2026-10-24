@@ -55,6 +55,8 @@ class Settings(BaseSettings):
     # A Claude Code session is indexed only after this many seconds without
     # writes, so live sessions are not re-embedded on every daemon pass.
     session_idle_seconds: int = 600
+    # claude.ai / Perplexity syncs run at most this often per account.
+    browser_sync_interval_seconds: int = 6 * 3600
 
     @property
     def sqlite_path(self) -> Path:

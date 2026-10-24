@@ -164,3 +164,73 @@ def test_claude_export_zip_import_and_single_store(svc, tmp_path):
     hits = svc.memory_search("hydrophone mooring depth")["results"]
     assert {h["provenance"]["source_type"] for h in hits} >= {"chat", "decision_record"}
     assert "account:claude-personal" in next(h for h in hits if h["kind"] == "chat")["tags"]
+
+
+def test_claude_branch_following_and_tool_capture():
+    from context_memory.ingestion.claude_export import render_conversation
+    conv = {
+        "uuid": "c", "name": "t", "current_leaf_message_uuid": "a2",
+        "chat_messages": [
+            {"uuid": "h1", "parent_message_uuid": None, "sender": "human", "index": 0,
+             "content": [{"type": "text", "text": "first question"}],
+             "attachments": [{"file_name": "notes.txt", "extracted_content": "attached body"}]},
+            {"uuid": "a1", "parent_message_uuid": "h1", "sender": "assistant", "index": 1,
+             "content": [{"type": "text", "text": "ABANDONED retry answer"}]},
+            {"uuid": "a2", "parent_message_uuid": "h1", "sender": "assistant", "index": 2,
+             "content": [
+                 {"type": "thinking", "thinking": "private reasoning"},
+                 {"type": "text", "text": "kept answer"},
+                 {"type": "tool_use", "name": "create_file",
+                  "input": {"path": "/out/plot.py", "file_text": "x = 1\n```\ninner fence", "description": "plot"}},
+                 {"type": "tool_use", "name": "memory_append",
+                  "input": {"path": "/memories/user.md", "content": "prefers SI units"}},
+                 {"type": "tool_use", "name": "web_search", "input": {"query": "argo floats"}},
+                 {"type": "tool_result", "content": [{"type": "text", "text": "WEB PAGE BODY"}]},
+                 {"type": "tool_use", "name": "view", "input": {"path": "/x"}},
+             ]},
+        ]}
+    md, turns = render_conversation(conv)
+    assert turns == 1
+    assert "kept answer" in md and "ABANDONED" not in md
+    assert "attached body" in md and "notes.txt" in md
+    assert "Created file `/out/plot.py`" in md and "inner fence" in md
+    assert "````" in md  # fence longer than the triple backticks inside the file
+    assert "prefers SI units" in md and "Searched the web: argo floats" in md
+    assert "private reasoning" not in md and "WEB PAGE BODY" not in md
+    assert "_Tools used: view_" in md
+
+
+def test_perplexity_render_thread():
+    from context_memory.browser.perplexity_web import render_thread
+    answer = json.dumps({"answer": "Argo floats profile to 2000 m.",
+                         "web_results": [{"name": "Argo", "url": "https://argo.ucsd.edu"}]})
+    entries = [{"uuid": "e1", "query_str": "How deep do Argo floats go?",
+                "updated_datetime": "2026-10-01T12:00:00",
+                "text": json.dumps([
+                    {"step_type": "INITIAL_QUERY", "content": {"query": "x"}},
+                    {"step_type": "ASI_TOOL_OUTPUT", "content": {"workflow_items": ["internal"]}},
+                    {"step_type": "FINAL", "content": {"answer": answer}}])},
+               {"uuid": "e2", "query_str": "", "text": "not json"}]
+    md, turns = render_thread("Argo depth", entries)
+    assert turns == 1
+    assert "How deep do Argo floats go?" in md and "profile to 2000 m" in md
+    assert "https://argo.ucsd.edu" in md and "internal" not in md
+
+
+def test_reconcile_repairs_orphans_and_missing(svc):
+    r = svc.memory_write(text="alpha beta gamma", kind="note", project="p")
+    cid = next(iter(svc.sqlite.chunk_ids()))
+    svc.lance.add([{"chunk_id": "c_orphan", "doc_id": "d_x", "project": "p", "kind": "note",
+                    "embedding_model": svc.embedder.model_name, "is_current": True,
+                    "vector": svc.embedder.embed_query("x")}])
+    svc.lance.delete([cid])
+    out = svc.reconcile()
+    assert out == {"orphan_vectors_deleted": 1, "documents_to_reembed": 1}
+    assert svc.sqlite.get_document(r["doc_id"])["content_hash"] == "sha256:invalidated"
+
+
+def test_slugify():
+    from context_memory.util import slugify
+    assert slugify("Ocean / Acoustics", "x") == "ocean-acoustics"
+    assert slugify("", "fallback") == "fallback"
+    assert slugify("--", "fallback") == "fallback"

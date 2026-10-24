@@ -19,9 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from context_memory.memory.service import IngressRejected, MemoryService
-from context_memory.util import stable_id
-
-_SLUG_BAD = re.compile(r"[^a-z0-9._-]+")
+from context_memory.util import slugify, stable_id
 
 
 @dataclass
@@ -132,9 +130,7 @@ def render(s: Session) -> str:
 
 
 def project_slug(cwd: str | None, fallback: str) -> str:
-    name = Path(cwd).name if cwd else fallback
-    slug = _SLUG_BAD.sub("-", name.lower()).strip("-.") or "claude-sessions"
-    return slug[:64]
+    return slugify(Path(cwd).name if cwd else fallback, "claude-sessions")
 
 
 def discover(config_dir: Path) -> list[Path]:

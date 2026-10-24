@@ -95,7 +95,54 @@ def run_pass(svc, settings: Settings) -> dict:
         summary[f"docs:{src.project}"] = _summarize(res)
 
     summary.update(process_inbox(svc, settings.data_dir.parent / "inbox", sources))
+    summary.update(browser_syncs(svc, settings, sources))
     return summary
+
+
+def browser_syncs(svc, settings: Settings, sources) -> dict:
+    """claude.ai and Perplexity syncs, at most once per browser_sync_interval_seconds
+    per account. Accounts without a logged-in profile are skipped."""
+    from context_memory.browser import claude_web, perplexity_web
+    from context_memory.browser.session import profile_dir
+
+    home = settings.data_dir.parent
+    state_file = home / "run" / "browser-sync.json"
+    state = json.loads(state_file.read_text()) if state_file.exists() else {}
+    summary: dict[str, dict] = {}
+    for acct in sources.accounts:
+        if acct.provider not in ("claude", "perplexity"):
+            continue
+        if not profile_dir(home, acct.label).exists():
+            continue
+        if time.time() - state.get(acct.label, 0) < settings.browser_sync_interval_seconds:
+            continue
+        sync = claude_web.sync if acct.provider == "claude" else perplexity_web.sync
+        try:
+            res = sync(svc, home, acct.label)
+            summary[f"web:{acct.label}"] = _summarize(res)
+            state[acct.label] = time.time()
+        except claude_web.NotLoggedIn as e:
+            log.warning("web sync %s: %s", acct.label, e)
+            summary[f"web:{acct.label}"] = {"not_logged_in": 1}
+            state[acct.label] = time.time()  # do not retry every pass
+        except Exception:
+            log.exception("web sync %s failed", acct.label)
+            summary[f"web:{acct.label}"] = {"failed": 1}
+    state_file.write_text(json.dumps(state))
+    return summary
+
+
+def gpu_status() -> dict | None:
+    import subprocess
+    try:
+        out = subprocess.run(
+            ["nvidia-smi", "--query-gpu=temperature.gpu,utilization.gpu,memory.used,clocks.sm",
+             "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=5,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        t, u, m, c = (int(x) for x in out.stdout.strip().split(", "))
+        return {"temp_c": t, "util_pct": u, "mem_mb": m, "sm_mhz": c}
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
 
 
 def process_inbox(svc, inbox: Path, sources) -> dict:
@@ -141,6 +188,7 @@ def main(settings: Settings | None = None, once: bool = False) -> int:
                  settings.data_dir)
         svc = build_service(settings)
         log.info("embedder %s dim=%d", svc.embedder.model_name, svc.embedder.dim)
+        log.info("reconcile: %s", svc.reconcile())
         heartbeat = home / "run" / "heartbeat.json"
         while not stop["flag"]:
             t0 = time.time()
@@ -156,6 +204,7 @@ def main(settings: Settings | None = None, once: bool = False) -> int:
                 "pid": os.getpid(), "last_pass_end": time.time(), "elapsed_s": elapsed,
                 "status": status, "summary": summary,
                 "stats": svc.sqlite.stats(), "vectors": svc.lance.count(),
+                "gpu": gpu_status(),
             }, indent=2))
             if once:
                 break

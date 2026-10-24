@@ -71,6 +71,25 @@ class MemoryService:
     def close(self) -> None:
         self.sqlite.close()
 
+    def reconcile(self, actor: str = "daemon") -> dict:
+        """Repair disagreement between the stores after a crash or power loss.
+
+        Vectors with no metadata row (crash between the Lance write and the
+        SQLite commit) are deleted. Current chunks missing from Lance cause
+        their document to be re-embedded on the next ingest.
+        """
+        lance_ids = self.lance.ids()
+        sql_ids = self.sqlite.chunk_ids()
+        orphans = sorted(lance_ids - sql_ids)
+        missing = self.sqlite.chunk_ids(current_only=True) - lance_ids
+        self.lance.delete(orphans)
+        docs = {r["doc_id"] for r in self.sqlite.get_chunks(sorted(missing)).values()}
+        for doc_id in docs:
+            self.sqlite.forget_document(doc_id)
+        out = {"orphan_vectors_deleted": len(orphans), "documents_to_reembed": len(docs)}
+        self.sqlite.audit(actor, "reconcile", None, "ok", out)
+        return out
+
     # -- write ---------------------------------------------------------------
 
     def ingest_text(

@@ -12,9 +12,9 @@ import time
 from pathlib import Path
 
 from context_memory.browser.session import browser_context
-from context_memory.ingestion.claude_export import render_conversation
+from context_memory.ingestion.claude_export import render_conversation, render_project
 from context_memory.memory.service import IngressRejected, MemoryService
-from context_memory.util import stable_id
+from context_memory.util import slugify, stable_id
 
 FETCH_JSON = """async (url) => {
   const r = await fetch(url, {credentials: 'include', headers: {'accept': 'application/json'}});
@@ -44,25 +44,31 @@ def sync(svc: MemoryService, home: Path, account: str, max_conversations: int = 
         orgs = _get(page, "/api/organizations")
         for org in orgs or []:
             org_id = org.get("uuid")
-            convs = _get(page, f"/api/organizations/{org_id}/chat_conversations") or []
+            base = f"/api/organizations/{org_id}"
+            project_slugs = _sync_projects(svc, page, base, account, org, delay_s, actor, results)
+            convs = _get(page, f"{base}/chat_conversations") or []
             convs.sort(key=lambda c: c.get("updated_at") or "", reverse=True)
             for conv in convs[:max_conversations]:
                 uuid = conv.get("uuid")
+                if conv.get("is_temporary"):
+                    results.append({"conversation": uuid, "status": "skipped-temporary"})
+                    continue
                 doc_id = stable_id("d", "claude.ai", uuid)
                 existing = svc.sqlite.get_document(doc_id)
                 if existing and existing["meta"].get("updated_at") == conv.get("updated_at"):
                     results.append({"conversation": uuid, "status": "unchanged"})
                     continue
                 time.sleep(delay_s)
-                detail = _get(page, f"/api/organizations/{org_id}/chat_conversations/{uuid}"
-                                    "?tree=True&rendering_mode=messages")
+                detail = _get(page, f"{base}/chat_conversations/{uuid}"
+                                    "?tree=True&rendering_mode=messages&render_all_tools=true")
                 text, turns = render_conversation(detail)
                 if turns == 0:
                     results.append({"conversation": uuid, "status": "empty"})
                     continue
+                project = project_slugs.get(conv.get("project_uuid"), "claude-web")
                 try:
                     r = svc.ingest_text(
-                        text=text, project="claude-web", source="claude", kind="chat",
+                        text=text, project=project, source="claude", kind="chat",
                         path=f"claude.ai://{account}/chat/{uuid}", title=detail.get("name"),
                         doc_id=doc_id, tags=["claude.ai", f"account:{account}"],
                         meta={"platform": "claude.ai", "account": account,
@@ -77,3 +83,34 @@ def sync(svc: MemoryService, home: Path, account: str, max_conversations: int = 
                 except (IngressRejected, ValueError) as e:
                     results.append({"conversation": uuid, "status": "error", "error": str(e)})
     return results
+
+
+def _sync_projects(svc, page, base: str, account: str, org: dict, delay_s: float,
+                   actor: str, results: list[dict]) -> dict[str, str]:
+    """Index each claude.ai project's instructions and knowledge files; return
+    project_uuid -> memory project slug, so its chats land in the same project."""
+    slugs: dict[str, str] = {}
+    for p in _get(page, f"{base}/projects") or []:
+        uuid = p.get("uuid")
+        slug = slugify(p.get("name"), "claude-project")
+        slugs[uuid] = slug
+        if p.get("archived_at"):
+            continue
+        time.sleep(delay_s)
+        detail = _get(page, f"{base}/projects/{uuid}") or p
+        docs = _get(page, f"{base}/projects/{uuid}/docs") or []
+        try:
+            r = svc.ingest_text(
+                text=render_project(detail, docs), project=slug, source="claude", kind="note",
+                path=f"claude.ai://{account}/project/{uuid}", title=f"Claude project: {p.get('name')}",
+                doc_id=stable_id("d", "claude.ai-project", uuid),
+                tags=["claude.ai", "claude-project", f"account:{account}"],
+                meta={"platform": "claude.ai", "account": account, "organization": org.get("name"),
+                      "project_id": uuid, "updated_at": p.get("updated_at"),
+                      "knowledge_files": len(docs), "via": "browser-sync"},
+                on_secret="redact", actor=actor,
+            )
+            results.append({"project": uuid, **r})
+        except (IngressRejected, ValueError) as e:
+            results.append({"project": uuid, "status": "error", "error": str(e)})
+    return slugs

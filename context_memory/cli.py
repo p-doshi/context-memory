@@ -134,15 +134,14 @@ def main(argv: list[str] | None = None) -> int:
             out = session.probe(home, acct.label, args.url or session.LOGIN_URLS[acct.provider])
             print(f"wrote endpoint shapes (no values) to {out}")
             return 0
-        if acct.provider != "claude":
-            print("error: perplexity sync needs a parser; run `cmh browser probe` first",
-                  file=sys.stderr)
-            return 2
-        from context_memory.browser import claude_web
+        from context_memory.browser import claude_web, perplexity_web
         from context_memory.server.app import build_service
         svc = build_service(settings)
         try:
-            res = claude_web.sync(svc, home, acct.label, max_conversations=args.max, actor="cli")
+            if acct.provider == "claude":
+                res = claude_web.sync(svc, home, acct.label, max_conversations=args.max, actor="cli")
+            else:
+                res = perplexity_web.sync(svc, home, acct.label, max_threads=args.max, actor="cli")
             _print({"summary": _summary(res),
                     "errors": [r for r in res if r["status"] == "error"]})
         except claude_web.NotLoggedIn as e:

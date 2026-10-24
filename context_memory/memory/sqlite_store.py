@@ -249,6 +249,17 @@ class SQLiteStore:
         q = f"SELECT * FROM chunks WHERE chunk_id IN ({', '.join('?' * len(chunk_ids))})"
         return {r["chunk_id"]: _row_to_dict(r) for r in self.conn.execute(q, chunk_ids)}
 
+    def chunk_ids(self, current_only: bool = False) -> set[str]:
+        q = "SELECT chunk_id FROM chunks" + (" WHERE valid_to IS NULL" if current_only else "")
+        return {r[0] for r in self.conn.execute(q)}
+
+    def forget_document(self, doc_id: str) -> None:
+        """Make the next ingest or web sync re-embed the document: clear the stored
+        content hash and the remote updated_at used by browser syncs."""
+        self.conn.execute(
+            "UPDATE documents SET content_hash = 'sha256:invalidated', "
+            "meta = json_remove(meta, '$.updated_at') WHERE doc_id = ?", (doc_id,))
+
     def stats(self) -> dict:
         one = lambda q: self.conn.execute(q).fetchone()[0]  # noqa: E731
         return {

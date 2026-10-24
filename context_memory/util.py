@@ -38,6 +38,15 @@ def new_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:16]}"
 
 
+_SLUG_BAD = re.compile(r"[^a-z0-9._-]+")
+
+
+def slugify(name: str | None, fallback: str) -> str:
+    """A valid project slug from free text ("Transit Time & METR" -> "transit-time-metr")."""
+    slug = _SLUG_BAD.sub("-", (name or "").lower()).strip("-.")[:64].rstrip("-.")
+    return slug or fallback
+
+
 def validate_project(project: str) -> str:
     if not PROJECT_RE.match(project):
         raise ValueError(

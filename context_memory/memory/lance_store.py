@@ -89,3 +89,9 @@ class LanceStore:
 
     def count(self) -> int:
         return self.table.count_rows()
+
+    def ids(self, current_only: bool = False) -> set[str]:
+        tbl = self.table.to_arrow()
+        if current_only:
+            tbl = tbl.filter(tbl.column("is_current"))
+        return set(tbl.column("chunk_id").to_pylist())
