@@ -1,0 +1,704 @@
+{
+  "timestamp": "2026-10-24T22:42:20.272141+00:00",
+  "git_commit": "6cfcb90",
+  "label": "via-server-tunnel",
+  "seed": 20261024,
+  "summary": {
+    "vector": {
+      "client_ms": {
+        "p50": 336.5,
+        "p95": 427.3
+      },
+      "server_audit": {
+        "p50": 0.6,
+        "p95": 1.1
+      },
+      "server_embed": {
+        "p50": 84.3,
+        "p95": 158.3
+      },
+      "server_gate": {
+        "p50": 7.0,
+        "p95": 15.5
+      },
+      "server_hydrate": {
+        "p50": 0.8,
+        "p95": 1.5
+      },
+      "server_total": {
+        "p50": 121.1,
+        "p95": 191.0
+      },
+      "server_vector": {
+        "p50": 25.5,
+        "p95": 30.1
+      }
+    },
+    "hybrid": {
+      "client_ms": {
+        "p50": 351.5,
+        "p95": 462.2
+      },
+      "server_audit": {
+        "p50": 0.7,
+        "p95": 1.0
+      },
+      "server_bm25": {
+        "p50": 8.9,
+        "p95": 23.9
+      },
+      "server_embed": {
+        "p50": 93.1,
+        "p95": 145.5
+      },
+      "server_gate": {
+        "p50": 8.8,
+        "p95": 28.9
+      },
+      "server_hydrate": {
+        "p50": 0.7,
+        "p95": 1.4
+      },
+      "server_total": {
+        "p50": 146.0,
+        "p95": 204.3
+      },
+      "server_vector": {
+        "p50": 26.8,
+        "p95": 34.6
+      }
+    }
+  },
+  "rows": [
+    {
+      "mode": "vector",
+      "client_ms": 329.4549000020197,
+      "server_embed": 52.42,
+      "server_vector": 25.73,
+      "server_gate": 7.0,
+      "server_hydrate": 0.86,
+      "server_audit": 0.67,
+      "server_total": 86.71
+    },
+    {
+      "mode": "vector",
+      "client_ms": 432.19780000072205,
+      "server_embed": 63.28,
+      "server_vector": 25.2,
+      "server_gate": 77.02,
+      "server_hydrate": 0.95,
+      "server_audit": 1.1,
+      "server_total": 167.59
+    },
+    {
+      "mode": "vector",
+      "client_ms": 304.06070000026375,
+      "server_embed": 94.58,
+      "server_vector": 26.74,
+      "server_gate": 7.03,
+      "server_hydrate": 1.42,
+      "server_audit": 0.53,
+      "server_total": 130.34
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 318.5809999995399,
+      "server_embed": 92.59,
+      "server_vector": 26.73,
+      "server_bm25": 11.01,
+      "server_gate": 12.21,
+      "server_hydrate": 0.76,
+      "server_audit": 0.7,
+      "server_total": 144.12
+    },
+    {
+      "mode": "vector",
+      "client_ms": 350.1624999989872,
+      "server_embed": 89.1,
+      "server_vector": 23.6,
+      "server_gate": 6.93,
+      "server_hydrate": 0.66,
+      "server_audit": 0.64,
+      "server_total": 120.97
+    },
+    {
+      "mode": "vector",
+      "client_ms": 300.3973999984737,
+      "server_embed": 88.52,
+      "server_vector": 25.38,
+      "server_gate": 5.96,
+      "server_hydrate": 0.72,
+      "server_audit": 0.64,
+      "server_total": 121.25
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 319.41770000048564,
+      "server_embed": 88.25,
+      "server_vector": 26.29,
+      "server_bm25": 10.35,
+      "server_gate": 8.98,
+      "server_hydrate": 0.67,
+      "server_audit": 0.93,
+      "server_total": 135.59
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 292.0549000009487,
+      "server_embed": 88.13,
+      "server_vector": 23.87,
+      "server_bm25": 2.31,
+      "server_gate": 5.56,
+      "server_hydrate": 0.46,
+      "server_audit": 0.64,
+      "server_total": 121.05
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 332.69060000020545,
+      "server_embed": 88.08,
+      "server_vector": 26.33,
+      "server_bm25": 6.36,
+      "server_gate": 5.37,
+      "server_hydrate": 0.44,
+      "server_audit": 0.7,
+      "server_total": 127.39
+    },
+    {
+      "mode": "vector",
+      "client_ms": 421.3266000006115,
+      "server_embed": 158.31,
+      "server_vector": 26.23,
+      "server_gate": 11.57,
+      "server_hydrate": 1.0,
+      "server_audit": 0.64,
+      "server_total": 197.79
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 323.7133999973594,
+      "server_embed": 64.59,
+      "server_vector": 27.17,
+      "server_bm25": 2.84,
+      "server_gate": 13.17,
+      "server_hydrate": 1.03,
+      "server_audit": 0.74,
+      "server_total": 109.69
+    },
+    {
+      "mode": "vector",
+      "client_ms": 288.08370000115247,
+      "server_embed": 55.2,
+      "server_vector": 24.67,
+      "server_gate": 7.78,
+      "server_hydrate": 0.9,
+      "server_audit": 0.89,
+      "server_total": 89.48
+    },
+    {
+      "mode": "vector",
+      "client_ms": 339.5447000002605,
+      "server_embed": 59.01,
+      "server_vector": 23.68,
+      "server_gate": 6.8,
+      "server_hydrate": 0.71,
+      "server_audit": 0.63,
+      "server_total": 90.87
+    },
+    {
+      "mode": "vector",
+      "client_ms": 251.03970000054687,
+      "server_embed": 53.91,
+      "server_vector": 23.84,
+      "server_gate": 1.59,
+      "server_hydrate": 0.52,
+      "server_audit": 0.72,
+      "server_total": 80.62
+    },
+    {
+      "mode": "vector",
+      "client_ms": 341.06450000035693,
+      "server_embed": 70.1,
+      "server_vector": 28.46,
+      "server_gate": 14.02,
+      "server_hydrate": 1.03,
+      "server_audit": 0.75,
+      "server_total": 114.42
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 283.6733000003733,
+      "server_embed": 60.48,
+      "server_vector": 29.24,
+      "server_bm25": 2.11,
+      "server_gate": 6.06,
+      "server_hydrate": 0.49,
+      "server_audit": 0.74,
+      "server_total": 99.21
+    },
+    {
+      "mode": "vector",
+      "client_ms": 321.46149999971385,
+      "server_embed": 58.81,
+      "server_vector": 24.59,
+      "server_gate": 10.96,
+      "server_hydrate": 0.9,
+      "server_audit": 0.66,
+      "server_total": 95.97
+    },
+    {
+      "mode": "vector",
+      "client_ms": 302.7552999992622,
+      "server_embed": 63.76,
+      "server_vector": 26.4,
+      "server_gate": 5.6,
+      "server_hydrate": 0.62,
+      "server_audit": 0.67,
+      "server_total": 97.09
+    },
+    {
+      "mode": "vector",
+      "client_ms": 296.1915999985649,
+      "server_embed": 67.76,
+      "server_vector": 23.41,
+      "server_gate": 6.07,
+      "server_hydrate": 0.56,
+      "server_audit": 0.65,
+      "server_total": 98.48
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 417.0633000030648,
+      "server_embed": 103.1,
+      "server_vector": 23.62,
+      "server_bm25": 21.29,
+      "server_gate": 10.43,
+      "server_hydrate": 0.75,
+      "server_audit": 0.68,
+      "server_total": 159.99
+    },
+    {
+      "mode": "vector",
+      "client_ms": 339.5211000024574,
+      "server_embed": 108.39,
+      "server_vector": 24.63,
+      "server_gate": 4.08,
+      "server_hydrate": 0.94,
+      "server_audit": 0.63,
+      "server_total": 138.72
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 330.87979999982053,
+      "server_embed": 100.16,
+      "server_vector": 23.5,
+      "server_bm25": 9.74,
+      "server_gate": 11.03,
+      "server_hydrate": 0.57,
+      "server_audit": 1.02,
+      "server_total": 146.14
+    },
+    {
+      "mode": "vector",
+      "client_ms": 354.1579000011552,
+      "server_embed": 91.6,
+      "server_vector": 25.95,
+      "server_gate": 8.15,
+      "server_hydrate": 0.81,
+      "server_audit": 0.76,
+      "server_total": 127.31
+    },
+    {
+      "mode": "vector",
+      "client_ms": 317.05000000147265,
+      "server_embed": 100.63,
+      "server_vector": 23.95,
+      "server_gate": 8.0,
+      "server_hydrate": 1.5,
+      "server_audit": 0.58,
+      "server_total": 134.7
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 357.12469999998575,
+      "server_embed": 100.59,
+      "server_vector": 25.2,
+      "server_bm25": 8.14,
+      "server_gate": 11.61,
+      "server_hydrate": 0.39,
+      "server_audit": 0.74,
+      "server_total": 146.82
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 426.7240999979549,
+      "server_embed": 103.11,
+      "server_vector": 27.91,
+      "server_bm25": 19.85,
+      "server_gate": 34.2,
+      "server_hydrate": 0.94,
+      "server_audit": 0.68,
+      "server_total": 186.82
+    },
+    {
+      "mode": "vector",
+      "client_ms": 301.9163999997545,
+      "server_embed": 108.72,
+      "server_vector": 25.0,
+      "server_gate": 7.1,
+      "server_hydrate": 0.94,
+      "server_audit": 1.14,
+      "server_total": 142.95
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 463.5515000009036,
+      "server_embed": 165.1,
+      "server_vector": 24.62,
+      "server_bm25": 2.3,
+      "server_gate": 15.82,
+      "server_hydrate": 1.37,
+      "server_audit": 0.55,
+      "server_total": 209.85
+    },
+    {
+      "mode": "vector",
+      "client_ms": 301.43840000164346,
+      "server_embed": 69.42,
+      "server_vector": 26.67,
+      "server_gate": 6.18,
+      "server_hydrate": 1.32,
+      "server_audit": 0.53,
+      "server_total": 104.17
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 370.53170000217506,
+      "server_embed": 79.38,
+      "server_vector": 24.16,
+      "server_bm25": 20.9,
+      "server_gate": 28.89,
+      "server_hydrate": 0.73,
+      "server_audit": 0.76,
+      "server_total": 154.96
+    },
+    {
+      "mode": "vector",
+      "client_ms": 339.72429999994347,
+      "server_embed": 59.14,
+      "server_vector": 23.58,
+      "server_gate": 15.46,
+      "server_hydrate": 1.72,
+      "server_audit": 0.64,
+      "server_total": 100.59
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 340.8281999982137,
+      "server_embed": 92.47,
+      "server_vector": 26.82,
+      "server_bm25": 2.51,
+      "server_gate": 5.56,
+      "server_hydrate": 0.76,
+      "server_audit": 0.64,
+      "server_total": 128.87
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 370.37100000088685,
+      "server_embed": 95.1,
+      "server_vector": 29.11,
+      "server_bm25": 23.91,
+      "server_gate": 13.14,
+      "server_hydrate": 1.19,
+      "server_audit": 0.69,
+      "server_total": 163.35
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 340.4592999977467,
+      "server_embed": 53.44,
+      "server_vector": 27.82,
+      "server_bm25": 1.64,
+      "server_gate": 7.59,
+      "server_hydrate": 0.56,
+      "server_audit": 0.64,
+      "server_total": 91.79
+    },
+    {
+      "mode": "vector",
+      "client_ms": 333.5336999989522,
+      "server_embed": 91.34,
+      "server_vector": 30.12,
+      "server_gate": 3.89,
+      "server_hydrate": 0.77,
+      "server_audit": 0.63,
+      "server_total": 126.8
+    },
+    {
+      "mode": "vector",
+      "client_ms": 346.49309999804245,
+      "server_embed": 80.09,
+      "server_vector": 24.8,
+      "server_gate": 9.64,
+      "server_hydrate": 0.92,
+      "server_audit": 0.65,
+      "server_total": 116.15
+    },
+    {
+      "mode": "vector",
+      "client_ms": 299.62779999914346,
+      "server_embed": 55.44,
+      "server_vector": 26.49,
+      "server_gate": 3.42,
+      "server_hydrate": 0.68,
+      "server_audit": 0.69,
+      "server_total": 86.76
+    },
+    {
+      "mode": "vector",
+      "client_ms": 323.9197000002605,
+      "server_embed": 84.2,
+      "server_vector": 31.16,
+      "server_gate": 6.21,
+      "server_hydrate": 0.78,
+      "server_audit": 0.69,
+      "server_total": 123.09
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 349.83509999801754,
+      "server_embed": 94.17,
+      "server_vector": 27.38,
+      "server_bm25": 1.42,
+      "server_gate": 6.55,
+      "server_hydrate": 1.3,
+      "server_audit": 0.62,
+      "server_total": 131.55
+    },
+    {
+      "mode": "vector",
+      "client_ms": 427.2779000020819,
+      "server_embed": 110.88,
+      "server_vector": 27.15,
+      "server_gate": 14.85,
+      "server_hydrate": 0.69,
+      "server_audit": 0.65,
+      "server_total": 154.27
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 325.1081999987946,
+      "server_embed": 105.68,
+      "server_vector": 26.56,
+      "server_bm25": 19.07,
+      "server_gate": 7.53,
+      "server_hydrate": 1.13,
+      "server_audit": 0.58,
+      "server_total": 160.68
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 354.37670000101207,
+      "server_embed": 102.95,
+      "server_vector": 24.24,
+      "server_bm25": 12.5,
+      "server_gate": 9.98,
+      "server_hydrate": 0.67,
+      "server_audit": 0.68,
+      "server_total": 151.16
+    },
+    {
+      "mode": "vector",
+      "client_ms": 349.74780000266037,
+      "server_embed": 91.15,
+      "server_vector": 27.16,
+      "server_gate": 6.68,
+      "server_hydrate": 0.6,
+      "server_audit": 0.64,
+      "server_total": 126.26
+    },
+    {
+      "mode": "vector",
+      "client_ms": 400.7524000007834,
+      "server_embed": 163.27,
+      "server_vector": 22.55,
+      "server_gate": 3.26,
+      "server_hydrate": 0.82,
+      "server_audit": 1.01,
+      "server_total": 190.96
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 338.6294999982056,
+      "server_embed": 86.83,
+      "server_vector": 29.1,
+      "server_bm25": 3.6,
+      "server_gate": 15.66,
+      "server_hydrate": 1.03,
+      "server_audit": 0.76,
+      "server_total": 137.13
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 340.5477000014798,
+      "server_embed": 85.11,
+      "server_vector": 28.05,
+      "server_bm25": 1.14,
+      "server_gate": 7.76,
+      "server_hydrate": 0.64,
+      "server_audit": 0.63,
+      "server_total": 123.43
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 367.84950000219396,
+      "server_embed": 104.4,
+      "server_vector": 23.19,
+      "server_bm25": 14.86,
+      "server_gate": 5.32,
+      "server_hydrate": 0.6,
+      "server_audit": 0.65,
+      "server_total": 149.14
+    },
+    {
+      "mode": "vector",
+      "client_ms": 315.4562000017904,
+      "server_embed": 84.39,
+      "server_vector": 27.69,
+      "server_gate": 4.59,
+      "server_hydrate": 0.57,
+      "server_audit": 0.64,
+      "server_total": 117.9
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 400.2292999975907,
+      "server_embed": 84.39,
+      "server_vector": 34.65,
+      "server_bm25": 23.82,
+      "server_gate": 19.46,
+      "server_hydrate": 1.9,
+      "server_audit": 0.84,
+      "server_total": 165.29
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 335.0350000000617,
+      "server_embed": 93.52,
+      "server_vector": 24.46,
+      "server_bm25": 2.22,
+      "server_gate": 7.58,
+      "server_hydrate": 0.5,
+      "server_audit": 0.72,
+      "server_total": 129.09
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 353.246599999693,
+      "server_embed": 89.99,
+      "server_vector": 26.82,
+      "server_bm25": 9.57,
+      "server_gate": 8.54,
+      "server_hydrate": 0.62,
+      "server_audit": 0.68,
+      "server_total": 136.34
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 462.16460000141524,
+      "server_embed": 145.5,
+      "server_vector": 28.11,
+      "server_bm25": 17.05,
+      "server_gate": 8.13,
+      "server_hydrate": 0.75,
+      "server_audit": 0.68,
+      "server_total": 200.35
+    },
+    {
+      "mode": "vector",
+      "client_ms": 372.3907000021427,
+      "server_embed": 105.96,
+      "server_vector": 25.7,
+      "server_gate": 9.17,
+      "server_hydrate": 1.21,
+      "server_audit": 0.55,
+      "server_total": 142.62
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 353.856599998835,
+      "server_embed": 88.6,
+      "server_vector": 32.5,
+      "server_bm25": 4.07,
+      "server_gate": 9.46,
+      "server_hydrate": 0.72,
+      "server_audit": 0.69,
+      "server_total": 136.16
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 316.05430000126944,
+      "server_embed": 85.26,
+      "server_vector": 35.71,
+      "server_bm25": 26.24,
+      "server_gate": 6.19,
+      "server_hydrate": 0.42,
+      "server_audit": 0.67,
+      "server_total": 154.64
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 386.0716000017419,
+      "server_embed": 108.26,
+      "server_vector": 23.84,
+      "server_bm25": 1.94,
+      "server_gate": 13.88,
+      "server_hydrate": 0.86,
+      "server_audit": 0.63,
+      "server_total": 149.51
+    },
+    {
+      "mode": "vector",
+      "client_ms": 349.2413999993005,
+      "server_embed": 83.44,
+      "server_vector": 27.55,
+      "server_gate": 8.36,
+      "server_hydrate": 0.87,
+      "server_audit": 0.64,
+      "server_total": 120.9
+    },
+    {
+      "mode": "vector",
+      "client_ms": 357.39680000187946,
+      "server_embed": 97.34,
+      "server_vector": 23.36,
+      "server_gate": 8.73,
+      "server_hydrate": 0.8,
+      "server_audit": 0.64,
+      "server_total": 130.91
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 370.8667000028072,
+      "server_embed": 111.64,
+      "server_vector": 27.6,
+      "server_bm25": 1.43,
+      "server_gate": 3.51,
+      "server_hydrate": 0.59,
+      "server_audit": 1.02,
+      "server_total": 145.9
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 406.36300000187475,
+      "server_embed": 145.36,
+      "server_vector": 29.46,
+      "server_bm25": 19.84,
+      "server_gate": 7.63,
+      "server_hydrate": 1.33,
+      "server_audit": 0.54,
+      "server_total": 204.29
+    }
+  ]
+}

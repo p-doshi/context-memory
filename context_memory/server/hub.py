@@ -146,7 +146,9 @@ def build_app(settings: Settings, embedder: Embedder, service: MemoryService | N
             finally:
                 current_device.reset(reset)
 
-    app = mcp.streamable_http_app(host=settings.hub_host)
+    # Plain JSON responses instead of an SSE stream: fewer round trips per call
+    # over the SSH tunnel (tools return one result; nothing is streamed).
+    app = mcp.streamable_http_app(host=settings.hub_host, json_response=True)
     app.add_middleware(BearerAuth)
     return app
 

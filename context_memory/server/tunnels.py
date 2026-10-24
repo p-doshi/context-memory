@@ -17,10 +17,13 @@ factor (e.g. many HPC clusters) cannot be tunnelled this way.
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 import subprocess
 import threading
 import time
+
+from context_memory.util import NO_WINDOW
 
 log = logging.getLogger("cmh.tunnels")
 
@@ -52,7 +55,7 @@ class Tunnel(threading.Thread):
             started = time.time()
             proc = subprocess.Popen(ssh_command(self.host, self.port), stdin=subprocess.DEVNULL,
                                     stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
-                                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                                    creationflags=NO_WINDOW)
             self.state, self.since = "up", time.time()
             log.info("tunnel to %s started (pid %d)", self.host, proc.pid)
             while proc.poll() is None and not self.stop_event.is_set():
@@ -67,7 +70,32 @@ class Tunnel(threading.Thread):
             self.stop_event.wait(backoff)
 
 
+def kill_stale(hosts: list[str], port: int) -> int:
+    """Terminate tunnel processes left by a previous daemon. If the daemon dies
+    abruptly its ssh child keeps running and holds the remote port, so every new
+    tunnel fails ("remote port forwarding failed"). Only one daemon runs at a
+    time (lock file), so any existing process with our exact forward is stale."""
+    killed = 0
+    forward = f"-R 127.0.0.1:{port}:127.0.0.1:{port}"
+    for host in hosts:
+        if os.name == "nt":
+            ps = ("Get-CimInstance Win32_Process -Filter \"Name='ssh.exe'\" | Where-Object { "
+                  f"$_.CommandLine -like '*{forward} {host}' }} | "
+                  "ForEach-Object { Stop-Process -Id $_.ProcessId -Force; $_.ProcessId }")
+            out = subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True,
+                                 text=True, timeout=30, creationflags=NO_WINDOW).stdout
+        else:
+            out = subprocess.run(["pkill", "-e", "-f", f"ssh .*{forward} {host}$"],
+                                 capture_output=True, text=True, timeout=30).stdout
+        n = len([l for l in out.splitlines() if l.strip()])
+        if n:
+            log.warning("killed %d stale tunnel process(es) for %s", n, host)
+        killed += n
+    return killed
+
+
 def start(hosts: list[str], port: int, stop: threading.Event) -> list[Tunnel]:
+    kill_stale(hosts, port)
     tunnels = [Tunnel(h, port, stop) for h in hosts]
     for t in tunnels:
         t.start()
