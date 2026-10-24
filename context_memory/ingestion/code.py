@@ -174,6 +174,9 @@ def ingest_codebase(svc: MemoryService, root: Path, project: str, max_files: int
                             "error": f"file budget of {max_files} reached"})
             break
         try:
+            if p.stat().st_size == 0 or not p.read_bytes().strip():
+                results.append({"path": str(p), "status": "empty"})
+                continue
             if suffix.lower() in MARKDOWN_SUFFIXES:
                 r = ingest_markdown_file(svc, p, project, actor)
             else:

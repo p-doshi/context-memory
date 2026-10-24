@@ -92,6 +92,16 @@ def environment(args, model_id: str, revision: str | None) -> dict:
     }
 
 
+def gpu_state() -> dict | None:
+    out = run(["nvidia-smi", "--query-gpu=temperature.gpu,clocks.sm,power.draw",
+               "--format=csv,noheader,nounits"])
+    try:
+        t, c, p = (float(x) for x in out.split(", "))
+        return {"temp_c": int(t), "sm_mhz": int(c), "power_w": p}
+    except ValueError:
+        return None
+
+
 def make_inputs(tokenizer, length: int, n: int, rng: random.Random) -> list[str]:
     ids = tokenizer(CORPUS.read_text(encoding="utf-8"), add_special_tokens=False)["input_ids"]
     starts = [rng.randrange(0, len(ids) - length) for _ in range(n)]
@@ -102,7 +112,7 @@ def make_inputs(tokenizer, length: int, n: int, rng: random.Random) -> list[str]
 def load(model_id, revision, device, dtype, cache_dir):
     kwargs = {"dtype": getattr(torch, dtype)} if device == "cuda" else {}
     m = SentenceTransformer(model_id, device=device, revision=revision, cache_folder=cache_dir,
-                            model_kwargs=kwargs, tokenizer_kwargs={"padding_side": "left"})
+                            model_kwargs=kwargs, processor_kwargs={"padding_side": "left"})
     m.max_seq_length = 1024
     return m
 
@@ -151,7 +161,10 @@ def main() -> int:
     ap.add_argument("--reps", type=int, default=5)
     ap.add_argument("--out", type=Path, default=REPO / "docs" / "benchmarks" / "results")
     ap.add_argument("--skip-cpu", action="store_true")
+    ap.add_argument("--grid", choices=["full", "reduced"], default="full",
+                    help="reduced = amendment 1 in docs/benchmarks/embedding-plan.md")
     args = ap.parse_args()
+    sys.stdout.reconfigure(line_buffering=True)  # progress visible when piped
 
     rng = random.Random(args.seed)
     torch.manual_seed(args.seed)
@@ -161,10 +174,18 @@ def main() -> int:
         configs.append(("cpu", "float32"))
 
     cells = []
-    for device, dtype in configs:
-        lengths = [128, 512] if device == "cpu" else [128, 512, 1024]
-        batches = [8] if device == "cpu" else [1, 4, 8, 16, 32, 64]
-        cells += [(device, dtype, L, b) for L in lengths for b in batches]
+    if args.grid == "full":
+        for device, dtype in configs:
+            lengths = [128, 512] if device == "cpu" else [128, 512, 1024]
+            batches = [8] if device == "cpu" else [1, 4, 8, 16, 32, 64]
+            cells += [(device, dtype, L, b) for L in lengths for b in batches]
+    else:
+        cells += [("cuda", "float16", L, b) for L in (128, 512) for b in (1, 4, 8, 16, 32)]
+        cells += [("cuda", "float16", 1024, b) for b in (4, 8)]
+        cells += [("cuda", "float32", 512, b) for b in (8, 16)]
+        cells += [("cpu", "float32", 512, 8)]
+        cells = [c for c in cells if (c[0], c[1]) in configs]
+    n_gpu, n_cpu = (64, 16) if args.grid == "full" else (32, 8)
     rng.shuffle(cells)
 
     try:
@@ -204,8 +225,9 @@ def main() -> int:
         query[f"{device}-{dtype}"] = time_queries(model, device)
         print(f"query {device}-{dtype}: p50 {query[f'{device}-{dtype}']['p50_ms']:.1f} ms")
         for (d, dt, L, b) in [c for c in cells if c[:2] == models_key]:
-            texts = inputs[L][: (16 if d == "cpu" else 64)]
-            row = {"device": d, "dtype": dt, "seq_len": L, "batch": b, "n_inputs": len(texts)}
+            texts = inputs[L][: (n_cpu if d == "cpu" else n_gpu)]
+            row = {"device": d, "dtype": dt, "seq_len": L, "batch": b, "n_inputs": len(texts),
+                   "gpu_before": gpu_state()}
             try:
                 times, peak = time_docs(model, texts, b, d, args.reps)
                 med = statistics.median(times)
@@ -216,10 +238,14 @@ def main() -> int:
             except torch.OutOfMemoryError:
                 row.update(status="oom")
                 torch.cuda.empty_cache()
+            row["gpu_after"] = gpu_state()
             results.append(row)
+            g = row["gpu_after"] or {}
             print(f"{d}-{dt} L={L:4d} b={b:2d}: "
-                  + (f"{row['inputs_per_s']:7.1f} inputs/s  peak {row['peak_vram_mb'] or 0:6.0f} MB"
-                     if row["status"] == "ok" else "OOM"))
+                  + (f"{row['inputs_per_s']:7.2f} inputs/s ({row['min_inputs_per_s']:.2f}-"
+                     f"{row['max_inputs_per_s']:.2f})  peak {row['peak_vram_mb'] or 0:6.0f} MB"
+                     if row["status"] == "ok" else "OOM")
+                  + (f"  gpu {g.get('temp_c')}C {g.get('sm_mhz')}MHz" if g else ""))
         del model
         gc.collect()
         if device == "cuda":

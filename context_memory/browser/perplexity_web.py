@@ -17,7 +17,7 @@ import json
 import time
 from pathlib import Path
 
-from context_memory.browser.claude_web import FETCH_JSON, NotLoggedIn
+from context_memory.browser.claude_web import NotLoggedIn, evaluate_fetch
 from context_memory.browser.session import browser_context
 from context_memory.ingestion.claude_code import _escape_headings
 from context_memory.memory.service import IngressRejected, MemoryService
@@ -27,7 +27,7 @@ MAX_SOURCES = 10
 
 
 def _get(page, url: str):
-    res = page.evaluate(FETCH_JSON, url)
+    res = evaluate_fetch(page, url)
     if res["status"] in (401, 403):
         raise NotLoggedIn(f"perplexity returned {res['status']} for {url}; run `cmh browser login`")
     if res["status"] != 200:

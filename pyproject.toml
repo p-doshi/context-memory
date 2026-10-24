@@ -20,7 +20,7 @@ dependencies = [
 # Local Qwen3 embeddings. Torch comes from the CUDA 12.6 index (see below).
 embed = [
     "torch>=2.6",
-    "sentence-transformers>=3.0",
+    "sentence-transformers>=6.0",
     "transformers>=4.51",
 ]
 # Logged-in browser sync (claude.ai, perplexity.ai). Drives the installed

@@ -59,6 +59,24 @@ results. Out-of-memory cells are recorded as OOM, not dropped.
 Git commit, `uv.lock` SHA-256, Python, torch, CUDA, driver, GPU name, model id and
 Hugging Face revision, seed, and the exact command line.
 
+## Amendment 1 (2026-10-24, before any result was seen)
+
+The full grid ran for about 3 hours without finishing (output was buffered, so no
+cell result was seen) and was stopped. The GPU sat at 83 to 86 °C with the SM clock
+falling from 1755 to 1620 MHz, so long runs mix throttled and unthrottled cells.
+Run instead with `--grid reduced`:
+
+| device / dtype | seq len | batch |
+|---|---|---|
+| cuda-float16 | 128, 512 | 1, 4, 8, 16, 32 |
+| cuda-float16 | 1024 | 4, 8 |
+| cuda-float32 | 512 | 8, 16 |
+| cpu-float32 (baseline) | 512 | 8 |
+
+32 inputs per GPU cell, 8 on CPU, 3 timed repetitions. GPU temperature, SM clock and
+power are recorded before and after every cell. Hypotheses, metrics and the decision
+rule are unchanged; hypothesis 2's plateau is judged over batches 1 to 32.
+
 ## Limits
 
 Single machine, single session. A laptop GPU's clocks depend on power source and

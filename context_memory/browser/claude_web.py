@@ -26,8 +26,22 @@ class NotLoggedIn(Exception):
     pass
 
 
+def evaluate_fetch(page, url: str) -> dict:
+    """Run FETCH_JSON in the page, retrying once if a navigation destroyed the
+    execution context."""
+    from playwright.sync_api import Error as PlaywrightError
+    for attempt in range(3):
+        try:
+            return page.evaluate(FETCH_JSON, url)
+        except PlaywrightError as e:
+            if "context was destroyed" not in str(e) or attempt == 2:
+                raise
+            page.wait_for_load_state("load")
+            page.wait_for_timeout(2000)
+
+
 def _get(page, url: str):
-    res = page.evaluate(FETCH_JSON, url)
+    res = evaluate_fetch(page, url)
     if res["status"] in (401, 403):
         raise NotLoggedIn(f"claude.ai returned {res['status']} for {url}; run `cmh browser login`")
     if res["status"] != 200:
@@ -40,7 +54,11 @@ def sync(svc: MemoryService, home: Path, account: str, max_conversations: int = 
     results: list[dict] = []
     with browser_context(home, account, headless=True) as ctx:
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
-        page.goto("https://claude.ai/", wait_until="domcontentloaded")
+        # The app shell redirects after load (e.g. to /new); let it settle so
+        # in-page fetches are not cut off. API URLs cannot be opened directly
+        # as documents (403).
+        page.goto("https://claude.ai/", wait_until="load")
+        page.wait_for_timeout(3000)
         orgs = _get(page, "/api/organizations")
         for org in orgs or []:
             org_id = org.get("uuid")
@@ -48,7 +66,12 @@ def sync(svc: MemoryService, home: Path, account: str, max_conversations: int = 
             project_slugs = _sync_projects(svc, page, base, account, org, delay_s, actor, results)
             convs = _get(page, f"{base}/chat_conversations") or []
             convs.sort(key=lambda c: c.get("updated_at") or "", reverse=True)
+            consecutive_errors = 0
             for conv in convs[:max_conversations]:
+                if consecutive_errors >= 5:
+                    results.append({"conversation": None, "status": "stopped",
+                                    "error": "5 consecutive fetch errors; possible rate limit"})
+                    break
                 uuid = conv.get("uuid")
                 if conv.get("is_temporary"):
                     results.append({"conversation": uuid, "status": "skipped-temporary"})
@@ -59,8 +82,24 @@ def sync(svc: MemoryService, home: Path, account: str, max_conversations: int = 
                     results.append({"conversation": uuid, "status": "unchanged"})
                     continue
                 time.sleep(delay_s)
-                detail = _get(page, f"{base}/chat_conversations/{uuid}"
-                                    "?tree=True&rendering_mode=messages&render_all_tools=true")
+                url = f"{base}/chat_conversations/{uuid}?tree=True&rendering_mode=messages&render_all_tools=true"
+                try:
+                    try:
+                        detail = _get(page, url)
+                    except (NotLoggedIn, RuntimeError):
+                        # A long embedding step can leave the page's session
+                        # stale (seen as a transient 403); reload and retry once.
+                        page.goto("https://claude.ai/", wait_until="load")
+                        page.wait_for_timeout(3000)
+                        detail = _get(page, url)
+                except (NotLoggedIn, RuntimeError) as e:
+                    # One unreadable conversation (e.g. a shared or workspace
+                    # session) must not abort the sync.
+                    consecutive_errors += 1
+                    results.append({"conversation": uuid, "status": "error", "error": str(e),
+                                    "platform": conv.get("platform")})
+                    continue
+                consecutive_errors = 0
                 text, turns = render_conversation(detail)
                 if turns == 0:
                     results.append({"conversation": uuid, "status": "empty"})

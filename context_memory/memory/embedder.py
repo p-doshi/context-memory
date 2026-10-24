@@ -71,13 +71,13 @@ class Qwen3Embedder:
             revision=revision,
             cache_folder=cache_dir,
             model_kwargs=model_kwargs,
-            tokenizer_kwargs={"padding_side": "left"},
+            processor_kwargs={"padding_side": "left"},
         )
         self.model.max_seq_length = max_seq_tokens
         self.model_name = model_name
         self.device = device
         self.batch_size = batch_size
-        self.dim = int(self.model.get_sentence_embedding_dimension())
+        self.dim = int(self.model.get_embedding_dimension())
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         if not texts:

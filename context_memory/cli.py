@@ -22,6 +22,10 @@ def _summary(results: list[dict]) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Windows consoles default to a legacy code page; chat text is UTF-8.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
     p = argparse.ArgumentParser(prog="cmh", description="Context Memory Harness")
     sub = p.add_subparsers(dest="cmd", required=True)
 
