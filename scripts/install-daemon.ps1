@@ -11,8 +11,10 @@
 .NOTES
   The task runs only while the user is logged in (a locked screen is fine).
   -KeepAwakeOnAC sets sleep and hibernate to "never" on AC power and the
-  lid-close action on AC to "do nothing". Battery behaviour is unchanged.
-  Revert with: powercfg /restoredefaultschemes
+  lid-close action on AC to "do nothing". On battery, lid close sleeps and
+  the machine hibernates at 10 % charge. Record your current values with
+  `powercfg /query SCHEME_CURRENT` first if you want to restore them exactly;
+  `powercfg /restoredefaultschemes` resets to Windows defaults.
 #>
 param(
     [switch]$KeepAwakeOnAC,
@@ -47,9 +49,17 @@ Start-ScheduledTask -TaskName $TaskName
 Write-Output "registered and started $TaskName"
 
 if ($KeepAwakeOnAC) {
+    # On AC: never sleep or hibernate; closing the lid keeps the machine running.
     powercfg /change standby-timeout-ac 0
     powercfg /change hibernate-timeout-ac 0
     powercfg /setacvalueindex SCHEME_CURRENT SUB_BUTTONS LIDACTION 0
+    # On battery (charger pulled, power cut): lid close sleeps, and the machine
+    # hibernates at 10 % so a long outage ends in a clean save to disk.
+    powercfg /setdcvalueindex SCHEME_CURRENT SUB_BUTTONS LIDACTION 1
+    powercfg /setdcvalueindex SCHEME_CURRENT SUB_BATTERY BATLEVELLOW 10
+    powercfg /setdcvalueindex SCHEME_CURRENT SUB_BATTERY BATACTIONLOW 2
+    powercfg /setdcvalueindex SCHEME_CURRENT SUB_BATTERY BATLEVELCRIT 5
+    powercfg /setdcvalueindex SCHEME_CURRENT SUB_BATTERY BATACTIONCRIT 2
     powercfg /setactive SCHEME_CURRENT
-    Write-Output "AC power: sleep=never, hibernate=never, lid close=do nothing"
+    Write-Output "AC: never sleep, lid close does nothing. Battery: lid close sleeps, hibernate at 10 %."
 }
