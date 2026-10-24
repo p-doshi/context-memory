@@ -64,7 +64,9 @@ class Qwen3Embedder:
 
         if device is None:
             device = "cuda" if torch.cuda.is_available() else "cpu"
-        model_kwargs = {"dtype": getattr(torch, dtype)} if device.startswith("cuda") else {}
+        # Always explicit: with no dtype, transformers loads the checkpoint's
+        # bfloat16, which is slow on CPU and not native on Turing GPUs.
+        model_kwargs = {"dtype": getattr(torch, dtype) if device.startswith("cuda") else torch.float32}
         self.model = SentenceTransformer(
             model_name,
             device=device,

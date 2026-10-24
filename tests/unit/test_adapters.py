@@ -85,7 +85,7 @@ def test_ingest_config_dir_respects_idle_and_redacts(svc, tmp_path):
 
 def test_python_chunker_splits_on_definitions_with_line_ranges(tmp_path):
     src = "import os\n\nX = 1\n\n\ndef a():\n    return 1\n\n\nclass B:\n    def m(self):\n        pass\n"
-    chunks = make_code_chunker(tmp_path / "m.py", count, max_tokens=8)(src)
+    chunks = make_code_chunker(tmp_path / "m.py", count, max_tokens=12)(src)
     sections = [c.section_path for c in chunks]
     assert sections[0].startswith("L1-L") and "module" in sections[0]
     assert any("def a" in s for s in sections)

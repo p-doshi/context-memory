@@ -110,7 +110,9 @@ def make_inputs(tokenizer, length: int, n: int, rng: random.Random) -> list[str]
 
 
 def load(model_id, revision, device, dtype, cache_dir):
-    kwargs = {"dtype": getattr(torch, dtype)} if device == "cuda" else {}
+    # Always explicit: with no dtype, transformers loads the checkpoint's
+    # bfloat16, which is slow on CPU and not native on Turing GPUs.
+    kwargs = {"dtype": getattr(torch, dtype)}
     m = SentenceTransformer(model_id, device=device, revision=revision, cache_folder=cache_dir,
                             model_kwargs=kwargs, processor_kwargs={"padding_side": "left"})
     m.max_seq_length = 1024

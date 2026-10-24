@@ -104,6 +104,14 @@ def make_code_chunker(path: Path, count_tokens: Callable[[str], int],
         chunks: list[Chunk] = []
         cur_start = cur_end = None
         labels: list[str] = []
+        # Prefix sums of per-line token counts (+1 per newline): span(s, e) is
+        # the token estimate for lines s..e (1-based, inclusive) in O(1).
+        prefix = [0]
+        for line in lines:
+            prefix.append(prefix[-1] + count_tokens(line) + 1)
+
+        def span(s: int, e: int) -> int:
+            return prefix[min(e, len(lines))] - prefix[s - 1]
 
         def emit(start: int, end: int, label_list: list[str]) -> None:
             text = "\n".join(lines[start - 1:end])
@@ -114,8 +122,7 @@ def make_code_chunker(path: Path, count_tokens: Callable[[str], int],
             chunks.append(Chunk(len(chunks), section, text, count_tokens(text)))
 
         for start, end, label in units:
-            unit_text = "\n".join(lines[start - 1:end])
-            if count_tokens(unit_text) > max_tokens:
+            if span(start, end) > max_tokens:
                 if cur_start:
                     emit(cur_start, cur_end, labels)
                     cur_start, labels = None, []
@@ -123,12 +130,12 @@ def make_code_chunker(path: Path, count_tokens: Callable[[str], int],
                 s = start
                 while s <= end:
                     e = s
-                    while e < end and count_tokens("\n".join(lines[s - 1:e + 1])) <= max_tokens:
+                    while e < end and span(s, e + 1) <= max_tokens:
                         e += 1
                     emit(s, e, [label])
                     s = e + 1
                 continue
-            if cur_start and count_tokens("\n".join(lines[cur_start - 1:end])) > max_tokens:
+            if cur_start and span(cur_start, end) > max_tokens:
                 emit(cur_start, cur_end, labels)
                 cur_start, labels = None, []
             cur_start = cur_start or start

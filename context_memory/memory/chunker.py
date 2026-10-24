@@ -101,20 +101,25 @@ def _blocks(body: str) -> list[str]:
 def _split_oversized(block: str, max_tokens: int, count: Callable[[str], int]) -> list[str]:
     pieces: list[str] = []
     cur: list[str] = []
+    cur_tokens = 0
     for line in block.splitlines():
-        if count(line) > max_tokens:
+        # Running per-line totals (+1 for the newline) instead of re-counting
+        # the joined text each line, which was quadratic on long blocks.
+        t = count(line) + 1
+        if t > max_tokens:
             # A single enormous line: fall back to word windows.
             words = line.split()
-            step = max(1, len(words) * max_tokens // max(count(line), 1))
+            step = max(1, len(words) * max_tokens // t)
             if cur:
                 pieces.append("\n".join(cur))
-                cur = []
+                cur, cur_tokens = [], 0
             pieces.extend(" ".join(words[i:i + step]) for i in range(0, len(words), step))
             continue
-        if cur and count("\n".join(cur + [line])) > max_tokens:
+        if cur and cur_tokens + t > max_tokens:
             pieces.append("\n".join(cur))
-            cur = []
+            cur, cur_tokens = [], 0
         cur.append(line)
+        cur_tokens += t
     if cur:
         pieces.append("\n".join(cur))
     return pieces
