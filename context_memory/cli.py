@@ -65,6 +65,12 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("daemon", help="run the always-on indexing daemon")
     s.add_argument("--once", action="store_true", help="run one pass and exit")
 
+    s = sub.add_parser("browser", help="logged-in browser sessions for web accounts")
+    s.add_argument("action", choices=["login", "probe", "sync"])
+    s.add_argument("account", help="account label from sources.toml")
+    s.add_argument("--url", help="page to probe (default: provider home)")
+    s.add_argument("--max", type=int, default=500, help="max conversations per sync")
+
     sub.add_parser("accounts", help="list accounts from sources.toml (no secrets)")
     s = sub.add_parser("secret", help="manage API keys in the OS keychain")
     s.add_argument("action", choices=["set", "list", "delete"])
@@ -111,6 +117,39 @@ def main(argv: list[str] | None = None) -> int:
             "sources_file": str(settings.resolved_sources_file),
             "accounts": [{**a.__dict__, "secret_stored": a.label in names} for a in src.accounts],
         })
+        return 0
+    if args.cmd == "browser":
+        from context_memory.browser import session
+        from context_memory.sources import load_sources
+        home = settings.data_dir.parent
+        acct = next((a for a in load_sources(settings.resolved_sources_file).accounts
+                     if a.label == args.account), None)
+        if acct is None or acct.provider not in session.LOGIN_URLS:
+            print(f"error: no claude/perplexity account labelled {args.account!r}", file=sys.stderr)
+            return 2
+        if args.action == "login":
+            session.login(home, acct.label, acct.provider)
+            return 0
+        if args.action == "probe":
+            out = session.probe(home, acct.label, args.url or session.LOGIN_URLS[acct.provider])
+            print(f"wrote endpoint shapes (no values) to {out}")
+            return 0
+        if acct.provider != "claude":
+            print("error: perplexity sync needs a parser; run `cmh browser probe` first",
+                  file=sys.stderr)
+            return 2
+        from context_memory.browser import claude_web
+        from context_memory.server.app import build_service
+        svc = build_service(settings)
+        try:
+            res = claude_web.sync(svc, home, acct.label, max_conversations=args.max, actor="cli")
+            _print({"summary": _summary(res),
+                    "errors": [r for r in res if r["status"] == "error"]})
+        except claude_web.NotLoggedIn as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
+        finally:
+            svc.close()
         return 0
     if args.cmd == "status":
         hb = settings.data_dir.parent / "run" / "heartbeat.json"
