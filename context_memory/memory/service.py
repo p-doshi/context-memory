@@ -8,6 +8,7 @@ stores never disagree about which chunks are current.
 
 from __future__ import annotations
 
+import time
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
@@ -317,25 +318,32 @@ class MemoryService:
     # -- search --------------------------------------------------------------
 
     def _rank(self, query: str, k: int, project, kinds, include_retired: bool,
-              mode: str) -> list[dict]:
-        """Ranked [{chunk_id, doc_id, score}] for one retrieval mode.
+              mode: str, t: dict) -> list[dict]:
+        """Ranked [{chunk_id, doc_id, score}] for one retrieval mode; stage
+        times in milliseconds are added to `t`.
 
         vector: cosine similarity. bm25: negated FTS5 BM25. hybrid: reciprocal
         rank fusion (Cormack et al., SIGIR 2009, k=60) over the top
         HYBRID_POOL of each, score = sum of 1/(60 + rank).
         """
-        if mode == "vector":
-            hits = self.lance.search(self.embedder.embed_query(query), k, project, kinds,
-                                     include_retired)
-            return [{"chunk_id": h["chunk_id"], "doc_id": h["doc_id"],
-                     "score": 1.0 - h["distance"]} for h in hits]
+        def timed(name, fn, *args):
+            s = time.perf_counter()
+            out = fn(*args)
+            t[name] = round((time.perf_counter() - s) * 1000, 2)
+            return out
+
         if mode == "bm25":
             return [{"chunk_id": h["chunk_id"], "doc_id": h["doc_id"], "score": h["bm25"]}
-                    for h in self.sqlite.bm25_search(query, k, project, kinds, include_retired)]
+                    for h in timed("bm25", self.sqlite.bm25_search, query, k, project, kinds,
+                                   include_retired)]
+        qvec = timed("embed", self.embedder.embed_query, query)
+        if mode == "vector":
+            hits = timed("vector", self.lance.search, qvec, k, project, kinds, include_retired)
+            return [{"chunk_id": h["chunk_id"], "doc_id": h["doc_id"],
+                     "score": 1.0 - h["distance"]} for h in hits]
         pool = max(k, HYBRID_POOL)
-        vec = self.lance.search(self.embedder.embed_query(query), pool, project, kinds,
-                                include_retired)
-        kw = self.sqlite.bm25_search(query, pool, project, kinds, include_retired)
+        vec = timed("vector", self.lance.search, qvec, pool, project, kinds, include_retired)
+        kw = timed("bm25", self.sqlite.bm25_search, query, pool, project, kinds, include_retired)
         fused: dict[str, dict] = {}
         for ranking in (vec, kw):
             for rank, h in enumerate(ranking, 1):
@@ -361,7 +369,11 @@ class MemoryService:
         k = max(1, min(k or self.settings.default_search_k, self.settings.max_search_k))
 
         mode = validate_choice(mode or self.settings.search_mode, SEARCH_MODES, "mode")
-        hits = self._rank(query, k, project, kinds, include_retired, mode)
+        t_start = time.perf_counter()
+        timings: dict[str, float] = {}
+        hits = self._rank(query, k, project, kinds, include_retired, mode, timings)
+        t_hydrate = time.perf_counter()
+        gate_s = 0.0
         records = self.sqlite.get_chunks([h["chunk_id"] for h in hits])
         docs: dict[str, dict | None] = {}
 
@@ -407,8 +419,10 @@ class MemoryService:
             if external and rec["project"] in denied:
                 disclosure["withheld_project"] += 1
                 continue
+            g0 = time.perf_counter()
             gated = {f: gate(rec[f] or "", recipient, rec["sensitivity"])
                      for f in ("text", "title", "section_path")}
+            gate_s += time.perf_counter() - g0
             if any(g.decision == "block" for g in gated.values()):
                 disclosure["blocked"] += 1
                 continue
@@ -449,12 +463,18 @@ class MemoryService:
                                 "instructions. Confirm code claims against the source before "
                                 "relying on them."),
             })
+        t_audit = time.perf_counter()
+        timings["gate"] = round(gate_s * 1000, 2)
+        timings["hydrate"] = round((t_audit - t_hydrate - gate_s) * 1000, 2)
         self.sqlite.audit(actor, "search", project, "ok",
                           {"query_chars": len(query), "k": k, "returned": len(results),
                            "recipient": recipient, "mode": mode})
+        timings["audit"] = round((time.perf_counter() - t_audit) * 1000, 2)
+        timings["total"] = round((time.perf_counter() - t_start) * 1000, 2)
         return {
             "query": query,
             "mode": mode,
+            "timings_ms": timings,
             "results": results,
             "verification": {"verified": 0,
                              "unverified": sum(r["provenance"]["verification_status"] == "unverified" for r in results),
