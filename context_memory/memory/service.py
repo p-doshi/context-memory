@@ -15,6 +15,7 @@ from context_memory.config import Settings
 from context_memory.ingestion.sensitive_scanner import redact_text, scan_text
 from context_memory.memory.chunker import Chunk, chunk_markdown, embedding_text
 from context_memory.memory.embedder import Embedder
+from context_memory.memory.graph import Graph
 from context_memory.memory.lance_store import LanceStore
 from context_memory.memory.sqlite_store import SQLiteStore
 from context_memory.policy.disclosure import TIER_RANK, detect, gate, highest_tier
@@ -71,6 +72,7 @@ class MemoryService:
         self.embedder = embedder
         self.sqlite = sqlite or SQLiteStore(settings.sqlite_path)
         self.lance = lance or LanceStore(settings.lance_path, embedder.dim, embedder.model_name)
+        self.graph = Graph(self.sqlite)
 
     def close(self) -> None:
         self.sqlite.close()
@@ -89,10 +91,25 @@ class MemoryService:
             ids = self.sqlite.current_chunk_ids(doc_id)
             with self.sqlite.transaction() as conn:
                 self.sqlite.retire_chunks(conn, ids, now, superseded_by_doc_version="source-removed")
+                self.graph.retire_evidence(ids, now)
                 self.lance.retire(ids)
             retired += len(ids)
         out = {"documents": len(rows), "chunks_retired": retired}
         self.sqlite.audit(actor, "retire", prefix, "ok", out)
+        return out
+
+    def rebuild_graph(self, actor: str = "cli") -> dict:
+        """(Re)extract graph edges for every document's current chunks."""
+        docs = [r[0] for r in self.sqlite.conn.execute("SELECT doc_id FROM documents")]
+        added = 0
+        for doc_id in docs:
+            doc = self.sqlite.get_document(doc_id)
+            chunks = sorted(self.sqlite.get_chunks(self.sqlite.current_chunk_ids(doc_id)).values(),
+                            key=lambda c: c["ordinal"])
+            with self.sqlite.transaction():
+                added += self.graph.index_document(doc, chunks)
+        out = {"documents": len(docs), "edges_added": added, **self.graph.stats()}
+        self.sqlite.audit(actor, "graph_rebuild", None, "ok", {"documents": len(docs), "edges_added": added})
         return out
 
     def reconcile(self, actor: str = "daemon") -> dict:
@@ -264,6 +281,15 @@ class MemoryService:
             self.sqlite.finish_job(job_id, "failed", {"error": repr(e)})
             self.sqlite.audit(actor, "ingest", path, "failed", {"job_id": job_id, "error": repr(e)})
             raise
+
+        # Graph extraction is best effort: a failure here is audited but never
+        # undoes the ingest that already committed.
+        try:
+            with self.sqlite.transaction():
+                self.graph.retire_evidence(old_ids, now)
+                self.graph.index_document(doc_row, chunk_rows)
+        except Exception as e:
+            self.sqlite.audit(actor, "graph", path, "failed", {"doc_id": doc_id, "error": repr(e)})
 
         status = "updated" if existing else "created"
         self.sqlite.finish_job(job_id, "ok", {"chunks": len(chunk_rows), "retired": len(old_ids),

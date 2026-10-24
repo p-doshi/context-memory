@@ -61,6 +61,12 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--title")
     s.add_argument("--tag", action="append", dest="tags")
 
+    s = sub.add_parser("graph", help="knowledge graph: rebuild, stats, find, neighbors")
+    s.add_argument("action", choices=["rebuild", "stats", "find", "neighbors"])
+    s.add_argument("name", nargs="?", help="entity name (or part of it)")
+    s.add_argument("--relation")
+    s.add_argument("--depth", type=int, default=1)
+
     s = sub.add_parser("retire", help="retire indexed documents under a path prefix")
     s.add_argument("prefix", help="e.g. C:/old/folder (paths are stored with forward slashes)")
 
@@ -217,6 +223,27 @@ def main(argv: list[str] | None = None) -> int:
         elif args.cmd == "write":
             _print(svc.memory_write(text=args.text, kind=args.kind, project=args.project,
                                     title=args.title, tags=args.tags, actor="cli"))
+        elif args.cmd == "graph":
+            g = svc.graph
+            if args.action == "rebuild":
+                _print(svc.rebuild_graph())
+            elif args.action == "stats":
+                _print(g.stats())
+            elif not args.name:
+                print("error: entity name required", file=sys.stderr)
+                return 2
+            elif args.action == "find":
+                _print(g.find(args.name))
+            else:
+                hits = g.find(args.name, limit=1)
+                if not hits:
+                    print(f"no entity matching {args.name!r}", file=sys.stderr)
+                    return 1
+                res = g.neighbors(hits[0]["entity_id"], args.relation, args.depth)
+                print(f"{hits[0]['type']} {hits[0]['name']}")
+                for e in res["edges"]:
+                    print(f"  {e['src_type']}:{e['src_name']} -{e['relation']}-> "
+                          f"{e['dst_type']}:{e['dst_name']}")
         elif args.cmd == "retire":
             _print(svc.retire_path_prefix(args.prefix.replace("\\", "/")))
         elif args.cmd == "stats":

@@ -234,3 +234,43 @@ def test_slugify():
     assert slugify("Ocean / Acoustics", "x") == "ocean-acoustics"
     assert slugify("", "fallback") == "fallback"
     assert slugify("--", "fallback") == "fallback"
+
+
+def test_graph_code_and_chat_edges_follow_supersession(svc, settings):
+    from context_memory.ingestion.code import ingest_code_file
+    root = settings.ingest_roots[0]
+    (root / "pkg").mkdir()
+    f = root / "pkg" / "loss.py"
+    f.write_text("import numpy\nfrom scipy import fft\n\n\ndef spectral_loss(x):\n    return x\n",
+                 encoding="utf-8")
+    ingest_code_file(svc, f, "ocean", root)
+    g = svc.graph
+    mod = g.find("pkg.loss")[0]
+    rels = {(e["relation"], e["dst_name"]) for e in g.neighbors(mod["entity_id"])["edges"]}
+    assert ("defines", "pkg.loss.spectral_loss") in rels
+    assert ("imports", "numpy") in rels and ("imports", "scipy") in rels
+
+    svc.ingest_text(text="# chat\nI changed pkg/loss.py and notes.md today.", project="ocean",
+                    source="claude", kind="chat", path="claude.ai://a/chat/1", doc_id="d_chat1",
+                    meta={"account": "claude-personal", "platform": "claude.ai"})
+    chat = g.find("claude.ai://a/chat/1")[0]
+    rels = {(e["relation"], e["dst_name"]) for e in g.neighbors(chat["entity_id"])["edges"]}
+    assert ("mentions", "pkg/loss.py") in rels
+    assert ("mentions", "notes.md") not in rels  # bare names are too ambiguous
+    assert ("from_account", "claude-personal") in rels
+
+    # Editing the file retires the old edges and adds the new ones.
+    f.write_text("def other():\n    pass\n", encoding="utf-8")
+    ingest_code_file(svc, f, "ocean", root)
+    rels = {(e["relation"], e["dst_name"]) for e in g.neighbors(mod["entity_id"])["edges"]}
+    assert ("defines", "pkg.loss.other") in rels
+    assert ("defines", "pkg.loss.spectral_loss") not in rels
+    hist = g.neighbors(mod["entity_id"], include_retired=True)["edges"]
+    assert any(e["dst_name"] == "pkg.loss.spectral_loss" and e["valid_to"] for e in hist)
+
+
+def test_graph_rebuild_is_idempotent(svc):
+    svc.memory_write(text="alpha", kind="note", project="p")
+    first = svc.rebuild_graph()
+    second = svc.rebuild_graph()
+    assert second["edges_added"] == 0 and second["edges_current"] == first["edges_current"]

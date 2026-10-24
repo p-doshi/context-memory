@@ -93,6 +93,24 @@ def ingest_markdown(path: str, project: str, max_files: int = 50) -> dict:
 
 
 @mcp.tool()
+def graph_neighbors(entity: str, relation: str | None = None, depth: int = 1) -> dict:
+    """Entities linked to `entity` in the knowledge graph (files, modules, functions,
+    projects, chats, accounts). relation: part_of, from_account, on_platform, defines,
+    imports, mentions. depth 1-3. Names pass the same disclosure policy as search."""
+    from context_memory.policy.disclosure import gate
+    svc = default_service()
+    hits = svc.graph.find(entity, limit=1)
+    if not hits:
+        return {"status": "not_found", "entity": entity}
+    res = svc.graph.neighbors(hits[0]["entity_id"], relation, depth)
+    recipient = svc.settings.mcp_recipient
+    for e in res["edges"]:
+        for f in ("src_name", "dst_name"):
+            e[f] = gate(e[f], recipient).text
+    return {"entity": {k: hits[0][k] for k in ("name", "type", "project")}, **res}
+
+
+@mcp.tool()
 def memory_stats() -> dict:
     """Counts of documents, chunks, projects and audit events."""
     svc = default_service()

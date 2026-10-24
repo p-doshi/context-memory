@@ -114,6 +114,10 @@ CREATE TABLE IF NOT EXISTS edges (
   valid_to TEXT,
   created_at TEXT
 );
+CREATE INDEX IF NOT EXISTS idx_edges_src ON edges(src, valid_to);
+CREATE INDEX IF NOT EXISTS idx_edges_dst ON edges(dst, valid_to);
+CREATE INDEX IF NOT EXISTS idx_edges_evidence ON edges(evidence_chunk_id);
+CREATE INDEX IF NOT EXISTS idx_entities_name ON entities(name);
 
 CREATE TABLE IF NOT EXISTS events (
   event_id TEXT PRIMARY KEY,
