@@ -88,6 +88,13 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--url", help="page to probe (default: provider home)")
     s.add_argument("--max", type=int, default=500, help="max conversations per sync")
 
+    s = sub.add_parser("device", help="machines allowed to use the hub")
+    s.add_argument("action", choices=["add", "list", "revoke"])
+    s.add_argument("name", nargs="?", help="e.g. cluster, server5, laptop2")
+    s.add_argument("--account", help="default Claude account label for its sessions")
+
+    sub.add_parser("hub", help="run only the hub (HTTP MCP + session upload), no indexing")
+
     sub.add_parser("accounts", help="list accounts from sources.toml (no secrets)")
     s = sub.add_parser("secret", help="manage API keys in the OS keychain")
     s.add_argument("action", choices=["set", "list", "delete"])
@@ -134,6 +141,31 @@ def main(argv: list[str] | None = None) -> int:
             "sources_file": str(settings.resolved_sources_file),
             "accounts": [{**a.__dict__, "secret_stored": a.label in names} for a in src.accounts],
         })
+        return 0
+    if args.cmd == "device":
+        from context_memory.memory.sqlite_store import SQLiteStore
+        from context_memory.server import hub
+        db = SQLiteStore(settings.sqlite_path)
+        try:
+            if args.action == "list":
+                _print(hub.list_devices(db))
+            elif not args.name:
+                print("error: device name required", file=sys.stderr)
+                return 2
+            elif args.action == "add":
+                token = hub.add_device(db, args.name, args.account)
+                print(f"device {args.name!r} added. Its token (shown once, store it on that machine):")
+                print(token)
+            else:
+                print("revoked" if hub.revoke_device(db, args.name) else "no active device by that name")
+        finally:
+            db.close()
+        return 0
+    if args.cmd == "hub":
+        from context_memory.memory.embedder import make_embedder
+        from context_memory.server.hub import serve
+        print(f"hub on http://{settings.hub_host}:{settings.hub_port} (Ctrl+C to stop)", flush=True)
+        serve(settings, make_embedder(settings))
         return 0
     if args.cmd == "graph":
         # SQLite only: no embedding model, so it can run beside the daemon.

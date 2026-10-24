@@ -54,6 +54,12 @@ class Settings(BaseSettings):
     # Projects never sent to cloud models (local_models_only, addendum §11).
     cloud_denied_projects: list[str] = Field(default_factory=list)
 
+    # Hub: memory served over HTTP to Claude Code on other machines. Bind it to a
+    # private address only (a Tailscale IP, or 127.0.0.1 behind an SSH forward).
+    hub_enabled: bool = False
+    hub_host: str = "127.0.0.1"
+    hub_port: int = 8765
+
     # Daemon: TOML file listing what to index (see config/sources.example.toml).
     sources_file: Path | None = None
     daemon_interval_seconds: int = 300

@@ -129,6 +129,18 @@ CREATE TABLE IF NOT EXISTS events (
   details JSON
 );
 
+-- Remote machines allowed to use the hub. Only a SHA-256 of each token is
+-- stored; the token itself is shown once when the device is added.
+CREATE TABLE IF NOT EXISTS devices (
+  device_id TEXT PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  account TEXT,
+  token_sha256 TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL,
+  revoked_at TEXT,
+  last_seen TEXT
+);
+
 CREATE TABLE IF NOT EXISTS audit_log (
   seq INTEGER PRIMARY KEY AUTOINCREMENT,
   ts TEXT NOT NULL,

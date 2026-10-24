@@ -189,6 +189,10 @@ def main(settings: Settings | None = None, once: bool = False) -> int:
         svc = build_service(settings)
         log.info("embedder %s dim=%d", svc.embedder.model_name, svc.embedder.dim)
         log.info("reconcile: %s", svc.reconcile())
+        if settings.hub_enabled:
+            from context_memory.server.hub import start_in_thread
+            start_in_thread(settings, svc.embedder)
+            log.info("hub listening on %s:%d", settings.hub_host, settings.hub_port)
         heartbeat = home / "run" / "heartbeat.json"
         while not stop["flag"]:
             t0 = time.time()

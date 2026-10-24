@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import math
 import re
+import threading
 from typing import Protocol
 
 _WORD_RE = re.compile(r"[A-Za-z0-9_]+")
@@ -80,21 +81,28 @@ class Qwen3Embedder:
         self.device = device
         self.batch_size = batch_size
         self.dim = int(self.model.get_embedding_dimension())
+        # The daemon and the hub share one model; GPU calls go one at a time.
+        self._lock = threading.Lock()
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        if not texts:
-            return []
-        out = self.model.encode(
-            texts, batch_size=self.batch_size, normalize_embeddings=True,
-            convert_to_numpy=True, show_progress_bar=False,
-        )
-        return out.astype("float32").tolist()
+        # The lock is taken per batch, so a query from the hub thread waits for
+        # at most one batch rather than a whole long document.
+        out: list[list[float]] = []
+        for i in range(0, len(texts), self.batch_size):
+            with self._lock:
+                vecs = self.model.encode(
+                    texts[i:i + self.batch_size], batch_size=self.batch_size,
+                    normalize_embeddings=True, convert_to_numpy=True, show_progress_bar=False,
+                )
+            out.extend(vecs.astype("float32").tolist())
+        return out
 
     def embed_query(self, text: str) -> list[float]:
-        out = self.model.encode(
-            [text], prompt_name="query", normalize_embeddings=True,
-            convert_to_numpy=True, show_progress_bar=False,
-        )
+        with self._lock:
+            out = self.model.encode(
+                [text], prompt_name="query", normalize_embeddings=True,
+                convert_to_numpy=True, show_progress_bar=False,
+            )
         return out[0].astype("float32").tolist()
 
     def count_tokens(self, text: str) -> int:
