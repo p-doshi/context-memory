@@ -1,0 +1,43 @@
+# Copy to <CMH_DATA_DIR>/../config/sources.toml (on the dev laptop:
+# C:\JARVIS\config\sources.toml) and edit. This file holds no secrets;
+# API keys go in the OS keychain with `cmh secret set <account-label>`.
+
+# --- Accounts -------------------------------------------------------------
+# Claude Code session logs carry no account id. Give each Claude account its
+# own CLAUDE_CONFIG_DIR so sessions are attributed to the right account.
+
+[[accounts]]
+label = "claude-work"
+provider = "claude"
+plan = "pro"
+claude_config_dir = "~/.claude"
+
+[[accounts]]
+label = "claude-personal"
+provider = "claude"
+plan = "pro"
+claude_config_dir = "~/.claude-personal"
+
+[[accounts]]
+label = "perplexity"
+provider = "perplexity"
+plan = "pro"
+notes = "no history API; API key (if any) stored via `cmh secret set perplexity`"
+
+# --- Codebases (git ls-files aware; Markdown inside is indexed too) ------
+
+[[codebase]]
+path = "C:/JARVIS/context-memory"
+project = "context-memory"
+
+# --- Documentation folders (Markdown only) -------------------------------
+
+# [[docs]]
+# path = "C:/research/notes"
+# project = "ocean-downscaling"
+
+# --- Claude Code project directory -> project slug overrides ------------
+# By default the slug is the last component of the session's working dir.
+
+[claude_code.project_map]
+# "c--Users-you-projects-ocean-model" = "sar"

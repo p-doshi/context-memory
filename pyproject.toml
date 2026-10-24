@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "context-memory"
+version = "0.1.0"
+description = "Local cross-model memory and context-management harness"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "lancedb>=0.17",
+    "pyarrow>=16",
+    "pydantic-settings>=2.4",
+    "mcp>=1.6",
+    "keyring>=25",
+]
+
+[project.optional-dependencies]
+# Local Qwen3 embeddings. Torch comes from the CUDA 12.6 index (see below).
+embed = [
+    "torch>=2.6",
+    "sentence-transformers>=3.0",
+    "transformers>=4.51",
+]
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[project.scripts]
+cmh = "context_memory.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["context_memory*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.uv]
+required-version = ">=0.9"
+
+# CUDA 12.6 wheels include sm_75 (Turing, e.g. GTX 1660 Ti). macOS has no
+# CUDA build, so it falls back to PyPI's default torch.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu126", marker = "sys_platform != 'darwin'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
