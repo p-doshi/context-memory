@@ -26,6 +26,26 @@ class NotLoggedIn(Exception):
     pass
 
 
+class Challenged(Exception):
+    """The site served a bot/rate challenge. The sync stops instead of trying to
+    get past it; the next scheduled pass resumes (unchanged items are skipped)."""
+
+
+def open_home(page, url: str = "https://claude.ai/") -> None:
+    """Load the app shell and let its redirects settle. Raises Challenged if the
+    site redirects to a challenge page."""
+    from playwright.sync_api import Error as PlaywrightError
+    try:
+        page.goto(url, wait_until="load")
+    except PlaywrightError as e:
+        if "interrupted by another navigation" not in str(e):
+            raise
+        page.wait_for_load_state("load")
+    page.wait_for_timeout(3000)
+    if "challenge" in page.url:
+        raise Challenged(f"challenge page at {page.url.split('?')[0]}")
+
+
 def evaluate_fetch(page, url: str) -> dict:
     """Run FETCH_JSON in the page, retrying once if a navigation destroyed the
     execution context."""
@@ -50,15 +70,22 @@ def _get(page, url: str):
 
 
 def sync(svc: MemoryService, home: Path, account: str, max_conversations: int = 500,
-         delay_s: float = 0.75, actor: str = "daemon") -> list[dict]:
+         delay_s: float = 1.5, actor: str = "daemon") -> list[dict]:
     results: list[dict] = []
+    try:
+        _sync(svc, home, account, max_conversations, delay_s, actor, results)
+    except Challenged as e:
+        results.append({"conversation": None, "status": "stopped-challenge", "error": str(e)})
+    return results
+
+
+def _sync(svc, home, account, max_conversations, delay_s, actor, results) -> None:
     with browser_context(home, account, headless=True) as ctx:
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
-        # The app shell redirects after load (e.g. to /new); let it settle so
-        # in-page fetches are not cut off. API URLs cannot be opened directly
-        # as documents (403).
-        page.goto("https://claude.ai/", wait_until="load")
-        page.wait_for_timeout(3000)
+        # The app shell redirects after load (e.g. to /new); open_home lets it
+        # settle so in-page fetches are not cut off. API URLs cannot be opened
+        # directly as documents (403).
+        open_home(page)
         orgs = _get(page, "/api/organizations")
         for org in orgs or []:
             org_id = org.get("uuid")
@@ -89,8 +116,8 @@ def sync(svc: MemoryService, home: Path, account: str, max_conversations: int = 
                     except (NotLoggedIn, RuntimeError):
                         # A long embedding step can leave the page's session
                         # stale (seen as a transient 403); reload and retry once.
-                        page.goto("https://claude.ai/", wait_until="load")
-                        page.wait_for_timeout(3000)
+                        # open_home raises Challenged if the site pushes back.
+                        open_home(page)
                         detail = _get(page, url)
                 except (NotLoggedIn, RuntimeError) as e:
                     # One unreadable conversation (e.g. a shared or workspace
@@ -121,7 +148,6 @@ def sync(svc: MemoryService, home: Path, account: str, max_conversations: int = 
                     results.append({"conversation": uuid, **r})
                 except (IngressRejected, ValueError) as e:
                     results.append({"conversation": uuid, "status": "error", "error": str(e)})
-    return results
 
 
 def _sync_projects(svc, page, base: str, account: str, org: dict, delay_s: float,
