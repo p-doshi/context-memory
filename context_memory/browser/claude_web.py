@@ -80,7 +80,7 @@ def sync(svc: MemoryService, home: Path, account: str, max_conversations: int = 
 
 
 def _sync(svc, home, account, max_conversations, delay_s, actor, results) -> None:
-    with browser_context(home, account, headless=True) as ctx:
+    with browser_context(home, account, headless=True, provider="claude") as ctx:
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         # The app shell redirects after load (e.g. to /new); open_home lets it
         # settle so in-page fetches are not cut off. API URLs cannot be opened

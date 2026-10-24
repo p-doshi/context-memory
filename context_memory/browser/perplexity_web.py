@@ -122,7 +122,7 @@ def _collect_threads(page, max_threads: int, max_scrolls: int = 200) -> dict[str
 def sync(svc: MemoryService, home: Path, account: str, max_threads: int = 1000,
          delay_s: float = 0.75, actor: str = "daemon") -> list[dict]:
     results: list[dict] = []
-    with browser_context(home, account, headless=True) as ctx:
+    with browser_context(home, account, headless=True, provider="perplexity") as ctx:
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         threads = _collect_threads(page, max_threads)
         if not threads:

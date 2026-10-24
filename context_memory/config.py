@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     # cuda only; cpu always runs float32. float32 is the default because float16
     # GEMM is 6.5x slower on the dev GPU (docs/benchmarks/embedding-results.md).
     embedding_dtype: str = "float32"
+    # False = Hugging Face offline mode: no network calls when loading the model
+    # (it must already be in model_dir). Set CMH_ALLOW_MODEL_DOWNLOAD=1 once to
+    # fetch a model.
+    allow_model_download: bool = False
     embedding_batch_size: int = 8
     embedding_max_seq_tokens: int = 1024
 
@@ -59,6 +63,9 @@ class Settings(BaseSettings):
     hub_enabled: bool = False
     hub_host: str = "127.0.0.1"
     hub_port: int = 8765
+    # SSH host aliases the daemon keeps a reverse tunnel to (see server/tunnels.py),
+    # e.g. ["server5.example.org"]. JSON list in CMH_HUB_TUNNELS.
+    hub_tunnels: list[str] = Field(default_factory=list)
 
     # Daemon: TOML file listing what to index (see config/sources.example.toml).
     sources_file: Path | None = None

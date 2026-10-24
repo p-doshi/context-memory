@@ -92,3 +92,17 @@ def test_push_client_hook_end_returns_fast(tmp_path, monkeypatch):
     assert time.perf_counter() - t < 1.5  # inside the SessionEnd default budget
     queued = (tmp_path / "state" / "cmh" / "queue.jsonl").read_text().splitlines()
     assert len(queued) == 1 and json.loads(queued[0])["session_id"] == "s1"
+
+
+def test_tunnel_command_binds_loopback_and_never_prompts():
+    from context_memory.server.tunnels import ssh_command
+    cmd = ssh_command("server5.example", 8765)
+    assert "BatchMode=yes" in cmd and "ExitOnForwardFailure=yes" in cmd
+    assert cmd[cmd.index("-R") + 1] == "127.0.0.1:8765:127.0.0.1:8765"
+    assert cmd[-1] == "server5.example"
+
+
+def test_hub_binds_loopback_by_default():
+    from context_memory.config import Settings
+    assert Settings(embedder="hash").hub_host == "127.0.0.1"
+    assert Settings(embedder="hash").allow_model_download is False

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+import os
 import re
 import threading
 from typing import Protocol
@@ -59,7 +60,13 @@ class Qwen3Embedder:
     def __init__(self, model_name: str, device: str | None = None,
                  batch_size: int = 8, max_seq_tokens: int = 1024,
                  revision: str | None = None, cache_dir: str | None = None,
-                 dtype: str = "float16"):
+                 dtype: str = "float16", allow_download: bool = False):
+        # Without these, every model load contacts huggingface.co (measured:
+        # two HTTPS connections per load). Offline mode makes no network calls;
+        # it must be set before huggingface_hub is imported.
+        os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
+        if not allow_download:
+            os.environ["HF_HUB_OFFLINE"] = "1"
         import torch
         from sentence_transformers import SentenceTransformer
 
@@ -121,5 +128,6 @@ def make_embedder(settings) -> Embedder:
             revision=settings.embedding_model_revision,
             cache_dir=str(settings.model_dir) if settings.model_dir else None,
             dtype=settings.embedding_dtype,
+            allow_download=settings.allow_model_download,
         )
     raise ValueError(f"unknown embedder {settings.embedder!r}")

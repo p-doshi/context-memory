@@ -65,14 +65,21 @@ def main() -> int:
     args = ap.parse_args()
     sys.stdout.reconfigure(encoding="utf-8", line_buffering=True)
 
+    settings = get_settings()
     queries = [json.loads(l) for l in GOLDEN.read_text(encoding="utf-8").splitlines() if l.strip()]
-    svc = build_service(get_settings())
+    # Queries that name private documents (chat titles) live outside the repo.
+    private = settings.data_dir.parent / "config" / "retrieval_golden_private.jsonl"
+    if private.exists():
+        queries += [json.loads(l) for l in private.read_text(encoding="utf-8").splitlines() if l.strip()]
+    print(f"{len(queries)} queries ({'with' if private.exists() else 'without'} the private set)")
+    svc = build_service(settings)
     per_query = {m: [] for m in MODES}
     for q in queries:
         for m in MODES:
             docs = ranked_docs(svc, q, m)
-            per_query[m].append({"id": q["id"], "type": q["type"], **metrics(docs, q),
-                                 "top3": [d["provenance"]["source_path"][-60:] for d in docs[:3]]})
+            # Only ids and metrics are recorded: result files may be committed,
+            # and paths/titles of private documents must not be.
+            per_query[m].append({"id": q["id"], "type": q["type"], **metrics(docs, q)})
 
     rng = random.Random(args.seed)
     summary: dict = {}

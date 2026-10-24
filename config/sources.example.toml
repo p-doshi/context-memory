@@ -40,4 +40,4 @@ project = "context-memory"
 # By default the slug is the last component of the session's working dir.
 
 [claude_code.project_map]
-# "c--Users-you-projects-ocean-model" = "sar"
+# "c--Users-you-projects-ocean-model" = "ocean-model"

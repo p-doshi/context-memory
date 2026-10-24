@@ -16,6 +16,7 @@ import logging
 import os
 import signal
 import sys
+import threading
 import time
 from collections import Counter
 from logging.handlers import RotatingFileHandler
@@ -189,10 +190,14 @@ def main(settings: Settings | None = None, once: bool = False) -> int:
         svc = build_service(settings)
         log.info("embedder %s dim=%d", svc.embedder.model_name, svc.embedder.dim)
         log.info("reconcile: %s", svc.reconcile())
+        tunnels = []
         if settings.hub_enabled:
+            from context_memory.server import tunnels as tunnel_mod
             from context_memory.server.hub import start_in_thread
             start_in_thread(settings, svc.embedder)
             log.info("hub listening on %s:%d", settings.hub_host, settings.hub_port)
+            tunnel_stop = threading.Event()
+            tunnels = tunnel_mod.start(settings.hub_tunnels, settings.hub_port, tunnel_stop)
         heartbeat = home / "run" / "heartbeat.json"
         while not stop["flag"]:
             t0 = time.time()
@@ -209,12 +214,15 @@ def main(settings: Settings | None = None, once: bool = False) -> int:
                 "status": status, "summary": summary,
                 "stats": svc.sqlite.stats(), "vectors": svc.lance.count(),
                 "gpu": gpu_status(),
+                "tunnels": {t.host: {"state": t.state, "since": t.since} for t in tunnels},
             }, indent=2))
             if once:
                 break
             deadline = time.time() + settings.daemon_interval_seconds
             while not stop["flag"] and time.time() < deadline:
                 time.sleep(1)
+        if tunnels:
+            tunnel_stop.set()
         svc.close()
         log.info("daemon stopped")
     return 0

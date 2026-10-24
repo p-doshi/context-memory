@@ -48,8 +48,26 @@ def profile_dir(home: Path, label: str) -> Path:
     return home / "browser" / label
 
 
+# Hosts a sync browser may contact, per provider (the host or any subdomain).
+# Everything else is aborted: on 2026-10-24 the Perplexity library page called
+# Datadog, Cloudflare Insights, Singular, Eppo and imagedelivery.net, none of
+# which the sync needs. claude.ai keeps Cloudflare's challenge host because it
+# is the site's own access check; the sync does not try to pass challenges.
+ALLOWED_HOSTS = {
+    "claude": ("claude.ai", "anthropic.com", "challenges.cloudflare.com"),
+    "perplexity": ("perplexity.ai",),
+}
+
+
+def _allowed(host: str, allowed: tuple[str, ...]) -> bool:
+    return any(host == a or host.endswith("." + a) for a in allowed)
+
+
 @contextmanager
-def browser_context(home: Path, label: str, headless: bool = True) -> Iterator:
+def browser_context(home: Path, label: str, headless: bool = True,
+                    provider: str | None = None) -> Iterator:
+    from urllib.parse import urlparse
+
     from playwright.sync_api import sync_playwright
 
     profile = profile_dir(home, label)
@@ -59,6 +77,19 @@ def browser_context(home: Path, label: str, headless: bool = True) -> Iterator:
             str(profile), channel="chrome", headless=headless,
             viewport={"width": 1280, "height": 900},
         )
+        if provider is not None:
+            allowed = ALLOWED_HOSTS[provider]
+            blocked: set[str] = set()
+
+            def route(r):
+                host = urlparse(r.request.url).hostname or ""
+                if r.request.url.startswith(("data:", "blob:")) or _allowed(host, allowed):
+                    return r.continue_()
+                blocked.add(host)
+                return r.abort()
+
+            ctx.route("**/*", route)
+            ctx.blocked_hosts = blocked  # for logging/inspection by callers
         try:
             yield ctx
         finally:
