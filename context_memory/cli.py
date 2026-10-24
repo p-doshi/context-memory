@@ -54,6 +54,8 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("-k", type=int, default=8)
     s.add_argument("--as", dest="recipient", default="owner",
                    help="recipient class for the Disclosure Gate (owner, cloud_model, ...)")
+    s.add_argument("--mode", choices=["vector", "bm25", "hybrid"],
+                   help="retrieval mode (default: CMH_SEARCH_MODE)")
     s.add_argument("--json", action="store_true", help="print the full JSON response")
 
     s = sub.add_parser("write", help="store a manual memory")
@@ -243,7 +245,8 @@ def main(argv: list[str] | None = None) -> int:
             _print({"summary": _summary(res), "sessions": res})
         elif args.cmd == "search":
             res = svc.memory_search(args.query, project=args.project, kinds=args.kinds,
-                                    k=args.k, actor="cli", recipient=args.recipient)
+                                    k=args.k, actor="cli", recipient=args.recipient,
+                                    mode=args.mode)
             if args.json:
                 _print(res)
             else:

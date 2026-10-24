@@ -2,19 +2,34 @@
 
 A local memory index shared by AI assistants (Claude, ChatGPT, Cursor, local Qwen).
 The index stores claims with provenance; source files, code, and experiment records
-stay authoritative. Design: [docs/design-v0.2.md](docs/design-v0.2.md).
+stay authoritative. Design: [docs/design-v0.2.md](docs/design-v0.2.md), with the
+[contextual-integrity addendum](docs/design-v0.3-contextual-integrity.md).
 
-Status: Week 1 of the roadmap (memory core).
+Status: Week 1 done; parts of Weeks 2 (hybrid retrieval, graph) and 5 (chat ingestion) in place.
 
 ## What exists
 
-- `memory_write` / `memory_search` over SQLite (provenance, append-only audit log) and LanceDB (vectors)
-- Heading-aware Markdown chunker; file and directory ingestion behind a path allowlist
-- Secret scanner at the ingress boundary: rejected content is never chunked, embedded, or stored
-- Re-ingesting a changed file retires old chunks (`valid_to` set) instead of deleting them
-- MCP server over stdio and a `cmh` CLI
-- Search results carry the provenance fields of design §7.2 and are marked `unverified`;
-  the verification service is Week 3
+One store (SQLite + LanceDB) for every source and account:
+
+| Source | How |
+|---|---|
+| Codebases | `git ls-files`; Python split at classes/methods, line ranges kept |
+| Markdown docs | heading-aware chunks |
+| Claude Code sessions | `<CLAUDE_CONFIG_DIR>/projects/**.jsonl`, per account |
+| Claude web + desktop | logged-in browser sync, or the official export via an inbox folder |
+| Perplexity | logged-in browser sync (threads + Spaces) |
+
+- `memory_write` / `memory_search` with provenance (design §7.2), results marked
+  `unverified` (the verification service is Week 3)
+- Retrieval modes `vector`, `bm25` (SQLite FTS5) and `hybrid` (reciprocal rank fusion)
+- Temporal knowledge graph: projects, documents, accounts, modules, classes, methods,
+  imports, file mentions; each edge cites its evidence chunk and expires with it
+- Ingress: secret scanner (reject, or redact for chat logs); path allowlist
+- Egress: deterministic Disclosure Gate per recipient class; MCP results are treated
+  as going to a cloud model (addendum §11)
+- Supersession instead of deletion: changed sources retire old chunks and edges
+- Always-on daemon with startup reconciliation, heartbeat, GPU temperature
+- MCP server (stdio) and `cmh` CLI
 
 ## Reproducible setup
 
@@ -50,13 +65,27 @@ Environment variables with the `CMH_` prefix:
 ## Usage
 
 ```sh
+# what to index lives in <home>/config/sources.toml (see config/sources.example.toml)
+uv run cmh daemon --once                        # one indexing pass over every source
+uv run cmh status                               # daemon heartbeat
+
+uv run cmh ingest-code path/to/repo --project ocean-downscaling
 uv run cmh ingest path/to/notes --project ocean-downscaling
-uv run cmh search "which physics loss is used" --project ocean-downscaling
+uv run cmh ingest-claude --account claude-work
+uv run cmh browser login claude-work            # once per web account, in plain Chrome
+uv run cmh browser sync claude-work
+
+uv run cmh search "which physics loss is used" --mode hybrid
+uv run cmh search "..." --as cloud_model        # see what the Disclosure Gate lets out
+uv run cmh graph neighbors context_memory.memory.service --relation imports
 uv run cmh write "Spectral loss replaced MSE on 2026-10-18." --project ocean-downscaling --kind decision
-uv run cmh stats
-uv run cmh audit -n 10
-uv run cmh serve   # MCP server on stdio
+uv run cmh secret set perplexity                # hidden prompt -> OS keychain
+uv run cmh stats ; uv run cmh audit -n 10
+uv run cmh serve                                # MCP server on stdio
 ```
+
+The always-on daemon is a per-user scheduled task:
+`powershell -ExecutionPolicy Bypass -File scripts\install-daemon.ps1 [-KeepAwakeOnAC]`.
 
 Register the MCP server with Claude Code:
 
@@ -66,10 +95,13 @@ claude mcp add context-memory -- uv run --directory C:/JARVIS/context-memory cmh
 
 ## Benchmarks
 
-`scripts/bench_embed.py` measures embedding throughput, query latency and VRAM.
-The plan is fixed in advance in [docs/benchmarks/embedding-plan.md](docs/benchmarks/embedding-plan.md);
-raw results, with the commit, lockfile hash, and command that produced them, are in
-`docs/benchmarks/results/`.
+Each benchmark has a plan committed before it runs; raw results record the commit,
+lockfile hash, seed and command.
+
+| Benchmark | Plan | Result |
+|---|---|---|
+| Embedding throughput (`scripts/bench_embed.py`) | [plan](docs/benchmarks/embedding-plan.md) | [results](docs/benchmarks/embedding-results.md): float32 on the dev GPU, 4.98 chunks/s at 512 tokens |
+| Retrieval quality (`scripts/eval_retrieval.py`) | [plan](docs/benchmarks/retrieval-plan.md) | pending |
 
 ## Repository layout
 
