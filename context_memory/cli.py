@@ -91,6 +91,9 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("device", help="machines allowed to use the hub")
     s.add_argument("action", choices=["add", "list", "revoke"])
     s.add_argument("name", nargs="?", help="e.g. cluster, server5, laptop2")
+    s.add_argument("--bundle", action="store_true",
+                   help="write the token and client files to <home>/config/devices/<name>-bundle "
+                        "instead of printing the token")
     s.add_argument("--account", help="default Claude account label for its sessions")
 
     sub.add_parser("hub", help="run only the hub (HTTP MCP + session upload), no indexing")
@@ -152,6 +155,13 @@ def main(argv: list[str] | None = None) -> int:
             elif not args.name:
                 print("error: device name required", file=sys.stderr)
                 return 2
+            elif args.action == "add" and args.bundle:
+                bundle = hub.make_bundle(db, args.name, args.account,
+                                         settings.data_dir.parent / "config" / "devices")
+                print(f"device {args.name!r} added; bundle (token inside, owner-only): {bundle}")
+                print("copy it and run it on the machine (the bundle deletes itself afterwards):")
+                print(f"  scp -r \"{bundle}\" <host>:~/cmh-bundle")
+                print("  ssh <host> \"bash ~/cmh-bundle/setup_remote.sh\"")
             elif args.action == "add":
                 token = hub.add_device(db, args.name, args.account)
                 print(f"device {args.name!r} added. Its token (shown once, store it on that machine):")

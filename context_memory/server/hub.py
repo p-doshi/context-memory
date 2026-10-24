@@ -18,6 +18,7 @@ embedding model with the daemon (the model serialises GPU use internally).
 from __future__ import annotations
 
 import gzip
+import os
 import hashlib
 import re
 import secrets
@@ -29,7 +30,7 @@ from context_memory.config import Settings
 from context_memory.memory.embedder import Embedder
 from context_memory.memory.service import IngressRejected, MemoryService
 from context_memory.memory.sqlite_store import SQLiteStore
-from context_memory.util import new_id, slugify, utcnow
+from context_memory.util import NO_WINDOW, new_id, slugify, utcnow
 
 MAX_UPLOAD_BYTES = 64 * 1024 * 1024
 _SAFE = re.compile(r"[^A-Za-z0-9._-]+")
@@ -42,17 +43,47 @@ def _hash(token: str) -> str:
 
 # -- device registry -------------------------------------------------------
 
-def add_device(db: SQLiteStore, name: str, account: str | None) -> str:
+def add_device(db: SQLiteStore, name: str, account: str | None, rotate: bool = False) -> str:
     """Register a device and return its token. The token is not stored."""
     name = slugify(name, "")
     if not name:
         raise ValueError("device name must contain letters or digits")
     token = "cmh_" + secrets.token_urlsafe(32)
+    if rotate and db.conn.execute("SELECT 1 FROM devices WHERE name = ?", (name,)).fetchone():
+        # New token for an existing device; the old token stops working at once.
+        db.conn.execute("UPDATE devices SET token_sha256 = ?, revoked_at = NULL, "
+                        "account = coalesce(?, account) WHERE name = ?", (_hash(token), account, name))
+        db.audit("cli", "device_rotate", name, "ok", {"account": account})
+        return token
     db.conn.execute(
         "INSERT INTO devices (device_id, name, account, token_sha256, created_at) VALUES (?, ?, ?, ?, ?)",
         (new_id("dev"), name, account, _hash(token), utcnow()))
     db.audit("cli", "device_add", name, "ok", {"account": account})
     return token
+
+
+def make_bundle(db: SQLiteStore, name: str, account: str | None, devices_dir: Path) -> Path:
+    """Register a device and write a setup bundle: the token (never printed) plus
+    the client files. On Windows the folder is restricted to the current user."""
+    import shutil
+    import subprocess
+
+    client = Path(__file__).resolve().parents[2] / "client"
+    bundle = devices_dir / f"{slugify(name, 'device')}-bundle"
+    if bundle.exists():
+        shutil.rmtree(bundle)
+    bundle.mkdir(parents=True)
+    if os.name == "nt":
+        subprocess.run(["icacls", str(bundle), "/inheritance:r", "/grant:r",
+                        f"{os.environ.get('USERNAME', '')}:(OI)(CI)F"],
+                       capture_output=True, creationflags=NO_WINDOW)
+    for f in ("cmh_push.py", "setup_remote.sh", "claude_memory.md"):
+        shutil.copy2(client / f, bundle / f)
+    token = add_device(db, name, account, rotate=True)
+    (bundle / "cmh.token").write_text(token)
+    if os.name != "nt":
+        (bundle / "cmh.token").chmod(0o600)
+    return bundle
 
 
 def revoke_device(db: SQLiteStore, name: str) -> bool:

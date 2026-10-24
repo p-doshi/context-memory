@@ -106,3 +106,19 @@ def test_hub_binds_loopback_by_default():
     from context_memory.config import Settings
     assert Settings(embedder="hash").hub_host == "127.0.0.1"
     assert Settings(embedder="hash").allow_model_download is False
+
+
+def test_make_bundle_contains_client_and_token(svc, tmp_path):
+    bundle = hub.make_bundle(svc.sqlite, "Cluster A", "claude-personal", tmp_path)
+    names = sorted(p.name for p in bundle.iterdir())
+    assert names == ["claude_memory.md", "cmh.token", "cmh_push.py", "setup_remote.sh"]
+    token = (bundle / "cmh.token").read_text()
+    assert hub.lookup_device(svc.sqlite, token)["name"] == "cluster-a"
+
+
+def test_rebundle_rotates_token(svc, tmp_path):
+    old = (hub.make_bundle(svc.sqlite, "server1", None, tmp_path) / "cmh.token").read_text()
+    new = (hub.make_bundle(svc.sqlite, "server1", None, tmp_path) / "cmh.token").read_text()
+    assert old != new
+    assert hub.lookup_device(svc.sqlite, old) is None
+    assert hub.lookup_device(svc.sqlite, new)["name"] == "server1"

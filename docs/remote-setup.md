@@ -71,16 +71,17 @@ policy on port forwarding before relying on it.
 
 ## 4. On each machine that runs Claude Code
 
-Quick path: copy the client, the setup script and the device token, then run the
-script. It installs nothing system-wide, merges the hooks (keeping a backup of
-`~/.claude/settings.json`), and registers the MCP server with the token passed
-through an environment variable so it never appears in a process list.
+Quick path: on the hub, create a bundle (the token is written into it, never
+printed), copy it, run it. It installs nothing system-wide, merges the hooks and a
+short memory-use guide into `~/.claude/settings.json` and `~/.claude/CLAUDE.md`
+(with backups), registers the MCP server with the token passed through an
+environment variable, and deletes the bundle. Re-running `device add --bundle` for
+an existing device rotates its token.
 
 ```sh
-# from the hub (token file written by `cmh device add`)
-scp client/cmh_push.py client/setup_remote.sh <host>:~/
-scp <home>/config/devices/<device>.token <host>:~/cmh.token
-ssh <host> 'bash ~/setup_remote.sh && rm ~/setup_remote.sh'
+uv run cmh device add <device> --account <label> --bundle     # on the hub
+scp -r <home>/config/devices/<device>-bundle <host>:~/cmh-bundle
+ssh <host> "bash ~/cmh-bundle/setup_remote.sh"
 ```
 
 Manual equivalent:

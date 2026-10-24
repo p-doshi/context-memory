@@ -1,3 +1,4 @@
+import json
 import pytest
 
 from context_memory.ingestion.markdown import (
@@ -181,3 +182,28 @@ def test_bm25_ignores_stopwords_and_keeps_filters(svc):
     assert hits and "hydrophone" in hits[0]["text"]
     assert svc.memory_search("hydrophone", mode="bm25", project="web")["results"] == []
     assert svc.memory_search("hydrophone", mode="bm25")["timings_ms"]["bm25"] >= 0
+
+
+def test_compact_view_and_memory_get(svc):
+    for i in range(3):
+        svc.memory_write(text=f"# Mooring {i}\n\n" + "filler words " * 80 +
+                         f"The hydrophone mooring depth is {150 + i} m. Contact a.b@example.com",
+                         kind="note", project="ocean", title=f"Mooring note {i}")
+    full = svc.memory_search("hydrophone mooring depth", k=8, recipient="cloud_model")
+    c = svc.compact(full, "hydrophone mooring depth")
+    assert c["hits"] and set(c["hits"][0]) == {"id", "score", "where", "source", "status", "snippet"}
+    assert "hydrophone" in c["hits"][0]["snippet"].lower()   # snippet centred on the match
+    assert len(c["hits"][0]["snippet"]) <= 330
+    assert len(json.dumps(c)) < len(json.dumps(full)) / 2
+    got = svc.memory_get([c["hits"][0]["id"], "c_missing"], recipient="cloud_model")
+    assert got["not_available"] == ["c_missing"]
+    assert "example.com" not in got["chunks"][0]["text"]       # same Disclosure Gate as search
+    assert got["chunks"][0]["provenance"]["chunk_id"] == c["hits"][0]["id"]
+
+
+def test_memory_get_respects_cloud_denied_projects(svc):
+    svc.settings.cloud_denied_projects = ["secret-proj"]
+    r = svc.memory_write(text="classified detail", kind="note", project="secret-proj")
+    cid = svc.sqlite.current_chunk_ids(r["doc_id"])[0]
+    assert svc.memory_get([cid], recipient="cloud_model")["not_available"] == [cid]
+    assert svc.memory_get([cid], recipient="owner")["chunks"]
