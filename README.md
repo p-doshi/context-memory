@@ -42,7 +42,7 @@ Environment variables with the `CMH_` prefix:
 | `CMH_EMBEDDER` | `qwen` | `hash` = deterministic offline embedder, used by tests |
 | `CMH_EMBEDDING_MODEL` | `Qwen/Qwen3-Embedding-0.6B` | |
 | `CMH_EMBEDDING_MODEL_REVISION` | unset | Hugging Face commit SHA; set it to pin weights |
-| `CMH_EMBEDDING_DTYPE` | `float16` | CUDA only |
+| `CMH_EMBEDDING_DTYPE` | `float32` | CUDA only; float16 is slower on GTX 16-series ([results](docs/benchmarks/embedding-results.md)) |
 | `CMH_EMBEDDING_BATCH_SIZE` | `8` | |
 | `CMH_INGEST_ROOTS` | `[]` | JSON list, e.g. `["C:/research/notes"]` |
 | `CMH_CHUNK_MAX_TOKENS` | `800` | |

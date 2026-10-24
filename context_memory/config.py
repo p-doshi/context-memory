@@ -30,7 +30,9 @@ class Settings(BaseSettings):
     # Model download cache. None = the Hugging Face default (~/.cache/huggingface).
     model_dir: Path | None = None
     embedding_device: str | None = None  # None = cuda if available, else cpu
-    embedding_dtype: str = "float16"  # applies on cuda only; cpu always runs float32
+    # cuda only; cpu always runs float32. float32 is the default because float16
+    # GEMM is 6.5x slower on the dev GPU (docs/benchmarks/embedding-results.md).
+    embedding_dtype: str = "float32"
     embedding_batch_size: int = 8
     embedding_max_seq_tokens: int = 1024
 
