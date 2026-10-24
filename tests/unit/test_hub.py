@@ -122,3 +122,39 @@ def test_rebundle_rotates_token(svc, tmp_path):
     assert old != new
     assert hub.lookup_device(svc.sqlite, old) is None
     assert hub.lookup_device(svc.sqlite, new)["name"] == "server1"
+
+
+def test_context_pack_for_cwd(svc):
+    svc.ingest_text(text="# s\nWe tuned the spectral loss. mail me@example.org", project="ocean-model",
+                    source="claude", kind="chat", path="x://s1", title="Spectral loss tuning me@example.org",
+                    doc_id="d_s1", meta={"platform": "claude-code"})
+    svc.memory_write(text="Use spectral loss weight 0.3 because MSE blurred fronts.", kind="decision",
+                     project="ocean-model")
+    pack = svc.context_pack("/home/p/work/Ocean-Model", recipient="cloud_model")
+    assert "ocean-model" in pack and "Spectral loss tuning" in pack
+    assert "spectral loss weight 0.3" in pack.lower()
+    assert "example.org" not in pack                      # titles pass the Disclosure Gate
+    assert len(pack) <= 2400
+    assert svc.context_pack("/home/p/unknown-folder") == ""
+    svc.settings.cloud_denied_projects = ["ocean-model"]
+    assert svc.context_pack("/home/p/work/Ocean-Model", recipient="cloud_model") == ""
+
+
+def test_context_endpoint_requires_token(client, svc):
+    svc.memory_write(text="decision text", kind="decision", project="proj-x")
+    assert client.get("/v1/context", params={"cwd": "/a/proj-x"}).status_code == 401
+    token = hub.add_device(svc.sqlite, "ctx-dev", None)
+    r = client.get("/v1/context", params={"cwd": "/a/proj-x"}, headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200 and "proj-x" in r.json()["context"]
+
+
+def test_push_client_context_is_silent_when_hub_down(tmp_path):
+    import subprocess
+    import sys
+    from pathlib import Path
+    script = Path(__file__).resolve().parents[2] / "client" / "cmh_push.py"
+    env = {"HOME": str(tmp_path), "USERPROFILE": str(tmp_path), "XDG_STATE_HOME": str(tmp_path / "s"),
+           "CMH_HUB_URL": "http://127.0.0.1:9", "CMH_HUB_TOKEN": "x", "PATH": ""}
+    p = subprocess.run([sys.executable, str(script), "context"], input=json.dumps({"cwd": "/a"}),
+                       text=True, env=env, capture_output=True, timeout=15)
+    assert p.returncode == 0 and p.stdout == ""            # no output, no failure

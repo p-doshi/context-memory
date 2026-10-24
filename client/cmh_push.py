@@ -60,6 +60,8 @@ def config():
 
 
 def token(cfg):
+    if os.environ.get("CMH_HUB_TOKEN"):
+        return os.environ["CMH_HUB_TOKEN"].strip()
     p = Path(cfg["token_file"]).expanduser()
     if os.name == "posix" and p.stat().st_mode & (stat.S_IRWXG | stat.S_IRWXO):
         raise SystemExit(f"{p} is readable by other users; run: chmod 600 {p}")
@@ -161,6 +163,30 @@ def flush(cfg):
     QUEUE.write_text("".join(json.dumps(it) + "\n" for it in remaining))
 
 
+def fetch_context(cfg, cwd, timeout=3):
+    """Context pack for cwd from the hub; empty string if unreachable."""
+    if not cfg.get("hub_url"):
+        return ""
+    from urllib.parse import quote
+    req = urllib.request.Request(cfg["hub_url"].rstrip("/") + "/v1/context?cwd=" + quote(cwd))
+    req.add_header("Authorization", "Bearer " + token(cfg))
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8")).get("context", "")
+    except (urllib.error.URLError, OSError, ValueError) as e:
+        log(f"context fetch failed: {e}")
+        return ""
+
+
+def emit_context(text):
+    """Hand the pack to Claude Code as SessionStart additional context."""
+    if not text:
+        return
+    out = {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": text}}
+    sys.stdout.write(json.dumps(out))
+    sys.stdout.flush()
+
+
 def status(cfg):
     print("hub_url:   ", cfg.get("hub_url", "(not set)"))
     print("token_file:", cfg["token_file"], "(exists)" if Path(cfg["token_file"]).expanduser().exists() else "(missing)")
@@ -190,11 +216,21 @@ def main(argv):
         except Exception as e:  # a hook must never break the user's session
             log(f"hook-end error: {e!r}")
         return 0
-    if cmd == "hook-start":
+    if cmd in ("hook-start", "context"):
+        # SessionStart: inject the memory context pack, then (hook-start only)
+        # sweep unsent transcripts in the background. Never fails the session.
         try:
-            detach("sweep")
+            raw = sys.stdin.read() if not sys.stdin.isatty() else ""
+            raw = raw.lstrip("﻿")  # PowerShell pipes add a byte-order mark
+            data = json.loads(raw) if raw.strip() else {}
+            emit_context(fetch_context(cfg, data.get("cwd") or os.getcwd()))
         except Exception as e:
-            log(f"hook-start error: {e!r}")
+            log(f"{cmd} context error: {e!r}")
+        if cmd == "hook-start":
+            try:
+                detach("sweep")
+            except Exception as e:
+                log(f"hook-start error: {e!r}")
         return 0
     if not cfg.get("hub_url") and cmd != "status":
         raise SystemExit("CMH_HUB_URL is not set")

@@ -132,6 +132,17 @@ def build_app(settings: Settings, embedder: Embedder, service: MemoryService | N
         dev = current_device.get()
         return JSONResponse({"status": "ok", "device": dev["name"] if dev else None})
 
+    @mcp.custom_route("/v1/context", methods=["GET"])
+    async def context(request: Request):
+        """Session-start context pack for a working directory (used by the
+        SessionStart hook on every machine). Passes the Disclosure Gate."""
+        cwd = request.query_params.get("cwd", "")[:1000]
+        with lock:
+            project_map = load_sources(settings.resolved_sources_file).claude_project_map
+            text = svc.context_pack(cwd, recipient=settings.mcp_recipient,
+                                    project_map=project_map, actor="hub")
+        return JSONResponse({"context": text})
+
     @mcp.custom_route("/v1/sessions", methods=["POST"])
     async def upload_session(request: Request):
         dev = current_device.get()
