@@ -143,6 +143,7 @@ def build_app(settings: Settings, embedder: Embedder, service: MemoryService | N
     from context_memory.sources import load_sources
 
     svc = service or MemoryService(settings, embedder)
+    svc.project_aliases = load_sources(settings.resolved_sources_file).project_aliases
     # Requests may run on worker threads; one at a time touches the hub's
     # SQLite connection.
     lock = threading.RLock()

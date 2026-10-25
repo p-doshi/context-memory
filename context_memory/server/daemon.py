@@ -74,6 +74,7 @@ def _summarize(results: list[dict]) -> dict:
 
 def run_pass(svc, settings: Settings) -> dict:
     sources = load_sources(settings.resolved_sources_file)
+    svc.project_aliases = sources.project_aliases
     # Owner-listed source paths extend the allowlist for this pass.
     svc.settings.ingest_roots = list(dict.fromkeys(settings.ingest_roots + sources.roots()))
     summary: dict[str, dict] = {}

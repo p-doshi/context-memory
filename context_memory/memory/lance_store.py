@@ -69,6 +69,9 @@ class LanceStore:
             ids = ", ".join(_quote(c) for c in chunk_ids)
             self.table.update(where=f"chunk_id IN ({ids})", values={"is_current": False})
 
+    def rename_project(self, old: str, new: str) -> None:
+        self.table.update(where=f"project = {_quote(old)}", values={"project": new})
+
     def delete(self, chunk_ids: list[str]) -> None:
         if chunk_ids:
             ids = ", ".join(_quote(c) for c in chunk_ids)

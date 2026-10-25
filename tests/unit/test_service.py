@@ -242,3 +242,17 @@ def test_deleted_files_are_retired_on_complete_pass(svc, settings):
     (root / "c.md").write_text("# C\ngamma", encoding="utf-8")
     res = ingest_markdown_dir(svc, root, "p", max_files=1)
     assert not any(r["status"] == "retired-deleted" for r in res)
+
+
+def test_rename_project_moves_rows_and_aliases_apply(svc):
+    svc.memory_write(text="Eddy detection uses SSH anomalies.", kind="note", project="eddflow")
+    svc.memory_write(text="Skill score against MUR.", kind="note", project="eddyflow")
+    out = svc.rename_project("eddflow", "eddyflow")
+    assert out["documents"] == 1
+    hits = svc.memory_search("eddy detection", k=5, projects=["eddyflow"])["results"]
+    assert any("SSH anomalies" in h["text"] for h in hits)
+    assert not svc.memory_search("eddy detection", k=5, projects=["eddflow"])["results"]
+    svc.project_aliases = {"eddflow": "eddyflow"}
+    svc.memory_write(text="New note under the old spelling.", kind="note", project="eddflow")
+    rows = svc.sqlite.conn.execute("SELECT DISTINCT project FROM documents").fetchall()
+    assert [tuple(r) for r in rows] == [("eddyflow",)]

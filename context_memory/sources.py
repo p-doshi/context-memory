@@ -45,6 +45,8 @@ class Sources:
     # Opt-in public surface (visitor site): nothing is public unless listed.
     public_projects: list[str] = field(default_factory=list)
     public_kinds: list[str] = field(default_factory=lambda: list(DEFAULT_PUBLIC_KINDS))
+    # [aliases] variant = "canonical": stored under the canonical project name.
+    project_aliases: dict[str, str] = field(default_factory=dict)
 
     def roots(self) -> list[Path]:
         return [s.path for s in self.codebases + self.docs]
@@ -82,5 +84,6 @@ def load_sources(path: Path) -> Sources:
     public_projects = [validate_project(x) for x in public.get("projects", [])]
     public_kinds = [validate_choice(k, KINDS, "public kind")
                     for k in public.get("kinds", DEFAULT_PUBLIC_KINDS)]
+    aliases = {validate_project(k): validate_project(v) for k, v in data.get("aliases", {}).items()}
     return Sources(accounts, paths("codebase"), paths("docs"), project_map,
-                   public_projects, public_kinds)
+                   public_projects, public_kinds, aliases)

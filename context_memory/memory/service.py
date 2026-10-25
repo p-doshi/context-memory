@@ -78,6 +78,9 @@ class MemoryService:
         self.sqlite = sqlite or SQLiteStore(settings.sqlite_path)
         self.lance = lance or LanceStore(settings.lance_path, embedder.dim, embedder.model_name)
         self.graph = Graph(self.sqlite)
+        # Owner-declared aliases ([aliases] in sources.toml): spelling variants
+        # of one project are stored under the canonical name.
+        self.project_aliases: dict[str, str] = {}
 
     def close(self) -> None:
         self.sqlite.close()
@@ -120,6 +123,26 @@ class MemoryService:
             retired += len(ids)
         out = {"documents": len(rows), "chunks_retired": retired}
         self.sqlite.audit(actor, "retire", prefix, "ok", out)
+        return out
+
+    def rename_project(self, old: str, new: str, actor: str = "cli") -> dict:
+        """Move every document of `old` to `new` (merging if `new` exists),
+        in SQLite and LanceDB, then rebuild the graph, whose entity ids
+        include the project."""
+        validate_project(old)
+        validate_project(new)
+        q = self.sqlite.conn.execute
+        clash = q("SELECT a.path FROM documents a JOIN documents b ON a.path = b.path "
+                  "WHERE a.project = ? AND b.project = ?", (old, new)).fetchall()
+        if clash:
+            raise ValueError(f"{len(clash)} path(s) exist in both projects, e.g. {clash[0][0]}")
+        with self.sqlite.transaction() as conn:
+            docs = conn.execute("UPDATE documents SET project = ? WHERE project = ?", (new, old)).rowcount
+            chunks = conn.execute("UPDATE chunks SET project = ? WHERE project = ?", (new, old)).rowcount
+        self.lance.rename_project(old, new)
+        graph = self.graph.rebuild()
+        out = {"documents": docs, "chunks": chunks, "edges": graph["edges_current"]}
+        self.sqlite.audit(actor, "rename_project", f"{old} -> {new}", "ok", out)
         return out
 
     def rebuild_graph(self, actor: str = "cli") -> dict:
@@ -183,6 +206,7 @@ class MemoryService:
         material; "redact" replaces each match with [REDACTED:<rule>] first.
         chunker overrides the default Markdown chunker (e.g. for source code).
         """
+        project = self.project_aliases.get(project, project)
         validate_project(project)
         validate_choice(source, SOURCES, "source")
         validate_choice(kind, KINDS, "kind")

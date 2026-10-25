@@ -93,8 +93,13 @@ print("loopback", try_("127.0.0.1", int(sys.argv[1])))
 if sys.argv[2]:
     print("gateway", try_(sys.argv[2], 80))
 "@
+# Windows PowerShell 5.1 mangles double quotes in native arguments, so the
+# probe goes through a file instead of -c.
 $py = Join-Path $base "python.exe"
-$out = & $py -I -c $probe $HubPort "$gateway"
+$probeFile = Join-Path $env:TEMP "cmh-egress-probe.py"
+Set-Content -Path $probeFile -Value $probe -Encoding ascii
+$out = & $py -I $probeFile $HubPort "$gateway"
+Remove-Item $probeFile -ErrorAction SilentlyContinue
 $out | ForEach-Object { Write-Output "self-test: $_" }
 if ($out -match "gateway error 10013") { Write-Output "self-test: PASS (outbound blocked by firewall)" }
 elseif (-not $gateway) { Write-Output "self-test: no default gateway (offline?); rerun when connected" }

@@ -73,6 +73,10 @@ def main(argv: list[str] | None = None) -> int:
 
     s = sub.add_parser("retire", help="retire indexed documents under a path prefix")
     s.add_argument("prefix", help="e.g. C:/old/folder (paths are stored with forward slashes)")
+    s = sub.add_parser("rename-project", help="move every document of one project to another "
+                       "(add the old name under [aliases] so new data follows)")
+    s.add_argument("old")
+    s.add_argument("new")
 
     sub.add_parser("stats", help="store statistics")
     sub.add_parser("status", help="daemon heartbeat and store statistics")
@@ -348,6 +352,8 @@ def main(argv: list[str] | None = None) -> int:
                                     title=args.title, tags=args.tags, actor="cli"))
         elif args.cmd == "retire":
             _print(svc.retire_path_prefix(args.prefix.replace("\\", "/")))
+        elif args.cmd == "rename-project":
+            _print(svc.rename_project(args.old, args.new))
         elif args.cmd == "stats":
             _print({**svc.sqlite.stats(), "vectors": svc.lance.count(),
                     "embedding_model": svc.embedder.model_name,
