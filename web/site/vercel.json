@@ -2,7 +2,33 @@
   "rewrites": [
     {
       "source": "/",
+      "missing": [
+        {
+          "type": "header",
+          "key": "accept",
+          "value": {
+            "re": ".*(text/html).*"
+          }
+        }
+      ],
+      "destination": "/overview.md"
+    },
+    {
+      "source": "/",
       "destination": "/human/index.html"
+    },
+    {
+      "source": "/guide",
+      "missing": [
+        {
+          "type": "header",
+          "key": "accept",
+          "value": {
+            "re": ".*(text/html).*"
+          }
+        }
+      ],
+      "destination": "/guide.md"
     },
     {
       "source": "/guide",
@@ -31,7 +57,11 @@
         },
         {
           "key": "Link",
-          "value": "</index.md>; rel=\"alternate\"; type=\"text/markdown\", </llms.txt>; rel=\"describedby\""
+          "value": "</overview.md>; rel=\"alternate\"; type=\"text/markdown\", </llms.txt>; rel=\"describedby\""
+        },
+        {
+          "key": "Vary",
+          "value": "Accept"
         }
       ]
     }

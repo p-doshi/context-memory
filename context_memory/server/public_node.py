@@ -197,8 +197,9 @@ def build_app(settings: Settings, root: Path, hub_url: str, token: str,
         agent = is_agent(request)
         # Human pages live under human/ so that static hosts (Vercel) find no file at
         # / or /guide and apply the agent/human rewrites in vercel.json.
-        f = SITE / (f"{name}.md" if agent else f"human/{name}.html")
-        link = f'</{name}.md>; rel="alternate"; type="text/markdown", </llms.txt>; rel="describedby"'
+        md = "overview.md" if name == "index" else f"{name}.md"  # no index.* at the root (static hosts)
+        f = SITE / (md if agent else f"human/{name}.html")
+        link = f'</{md}>; rel="alternate"; type="text/markdown", </llms.txt>; rel="describedby"'
         return FileResponse(f, media_type=STATIC_TYPES[f.suffix],
                             headers={**HEADERS, "Link": link, "Vary": "Accept, User-Agent"})
 

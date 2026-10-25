@@ -98,7 +98,7 @@ def test_no_store_yet_returns_503(settings, tmp_path):
 def test_markdown_twin_names_every_pipeline_stage():
     site = public_node.SITE
     stages = json.loads((site / "pipeline.json").read_text())["stages"]
-    md = (site / "index.md").read_text()
+    md = (site / "overview.md").read_text()
     assert [s["id"] for s in stages] == re.findall(r"^\d+\. \*\*(\w+)\*\*", md, re.M)
 
 
@@ -108,6 +108,9 @@ def test_vercel_deploy_folder_fills_api_host(tmp_path):
     assert "human/index.html" in files and "index.html" not in files
     assert "API_HOST" not in (tmp_path / "deploy" / "vercel.json").read_text()
     assert json.loads((tmp_path / "deploy" / "config.json").read_text())["api"] == "https://api.example.org"
+    assert not any(f.startswith("index.") for f in files)   # Vercel serves root index.* before rewrites
+    assert "(https://api.example.org/api/agent)" in (tmp_path / "deploy" / "llms.txt").read_text()
+    assert "`POST https://api.example.org/api/agent`" in (tmp_path / "deploy" / "overview.md").read_text()
     with pytest.raises(ValueError):
         write_deploy(tmp_path / "x", "not a host; rm -rf")
 

@@ -38,6 +38,14 @@ def write_deploy(out: Path, api_host: str) -> list[str]:
     vj = out / "vercel.json"
     vj.write_text(vj.read_text().replace("API_HOST", api_host))
     (out / "config.json").write_text(json.dumps({"api": f"https://{api_host}"}) + "\n")
+    # Agent-facing documents link the API; on a static host it lives at api_host.
+    for name in ("llms.txt", "overview.md", "guide.md"):
+        f = out / name
+        if f.exists():
+            text = f.read_text(encoding="utf-8")
+            for prefix in ("](", "`GET ", "`POST "):
+                text = text.replace(prefix + "/api/", f"{prefix}https://{api_host}/api/")
+            f.write_text(text, encoding="utf-8")
     return sorted(p.relative_to(out).as_posix() for p in out.rglob("*")
                   if p.is_file() and ".git" not in p.relative_to(out).parts)
 

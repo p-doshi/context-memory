@@ -6,13 +6,13 @@ This site serves Markdown to agents at the same URLs as the human pages. The liv
 
 ## Docs
 
-- [Project overview](/index.md): pipeline stages, measured performance, endpoints
+- [Project overview](/overview.md): pipeline stages, measured performance, endpoints
 - [Replication guide](/guide.md): six commands with a check after each
 - [Pipeline as JSON](/pipeline.json): stages, code locations, endpoints
 
 ## API
 
-- [AG-UI agent](/api/agent): POST RunAgentInput, server-sent events; answers cite retrieved excerpts
+- [AG-UI agent](/api/agent): POST RunAgentInput; server-sent events, or one JSON array with `Accept: application/json`; answers cite retrieved excerpts
 - [Search](/api/search?q=disclosure%20gate): GET, JSON excerpts with sources and verification status
 - [Stats](/api/stats): GET, live counts of the public memory
 
