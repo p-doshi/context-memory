@@ -38,6 +38,13 @@ STATIC_TYPES = {".html": "text/html; charset=utf-8", ".css": "text/css", ".js": 
 AGENT_UA = re.compile(r"bot|crawl|spider|slurp|curl|wget|httpie|python|httpx|aiohttp|node-fetch|undici|"
                       r"axios|go-http|java/|okhttp|claude|anthropic|openai|gpt|perplexity|gemini|"
                       r"cohere|mistral|llama|agent|mcp", re.I)
+# The only texts the public gate demo runs on (synthetic).
+GATE_EXAMPLES = {
+    "contact": "Email the draft to jane.doe@example.org and call her at +1 902 555 0147 before Friday.",
+    "address": "The workshop moved to 123 Example Street, Halifax B3H 4R2, room 214.",
+    "card": "Lab supplies were paid with card 4242 4242 4242 4242; reimbursement pending.",
+    "location": "The test mooring sits at 44.6366 N, 63.5917 W, near the dock.",
+}
 HEADERS = {
     "Content-Security-Policy": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
                                "frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
@@ -257,15 +264,29 @@ def build_app(settings: Settings, root: Path, hub_url: str, token: str,
                    else "excerpts"}
         return _json(out)
 
+    async def read_json(request: Request, limit: int):
+        """(body, error response). Oversized bodies get 413, not a misleading 400."""
+        raw = await request.body()
+        if len(raw) > limit:
+            return None, _json({"error": f"request too large: at most {limit // 1000} KB"}, 413)
+        try:
+            body = json.loads(raw or b"{}")
+        except ValueError:
+            return None, _json({"error": "body must be JSON"}, 400)
+        return (body, None) if isinstance(body, dict) else (None, _json({"error": "body must be a JSON object"}, 400))
+
     async def api_gate(request: Request):
-        """The Disclosure Gate applied to text the visitor types (not stored)."""
+        """The Disclosure Gate on fixed example notes only. A free-text gate would be an
+        oracle: a visitor could iterate formats until one slips through the patterns."""
         if (r := limited(request, "api", 30, 60)):
             return r
         from context_memory.policy.disclosure import gate
-        try:
-            text = str(json.loads((await request.body())[:4000] or b"{}").get("text", ""))[:600]
-        except (ValueError, AttributeError):
-            return _json({"error": "body must be JSON {\"text\": ...}"}, 400)
+        body, err = await read_json(request, 1000)
+        if err:
+            return err
+        text = GATE_EXAMPLES.get(str(body.get("example", "")))
+        if text is None:
+            return _json({"error": f"example must be one of {sorted(GATE_EXAMPLES)}"}, 400)
         res = {rec: gate(text, rec, chunk_tier="public") for rec in ("owner", "cloud_model", "public")}
         return _json({rec: {"text": g.text, "withheld": [f"{v['tier']}:{v['kind']}" for v in g.violations]}
                       for rec, g in res.items()})
@@ -277,10 +298,9 @@ def build_app(settings: Settings, root: Path, hub_url: str, token: str,
         svc = store.get()
         if svc is None:
             return no_store()
-        try:
-            body = json.loads((await request.body())[:20000] or b"{}")
-        except ValueError:
-            return _json({"error": "body must be JSON (AG-UI RunAgentInput)"}, 400)
+        body, err = await read_json(request, 20000)
+        if err:
+            return err
         ip = client_ip(request)
         verdict = guard.check_question(public_mod.last_user_message(body), ip)
         if not verdict.ok:
@@ -310,7 +330,7 @@ def build_app(settings: Settings, root: Path, hub_url: str, token: str,
             finally:
                 llm_slot.release()
             text = llm.ground(text, hits)  # drop unsupported sentences, cite the rest
-            out = guard.check_answer(text, question, ip)
+            out = guard.check_answer(text, question, ip, excerpts=[h.get("snippet", "") for h in hits])
             text = text if out.ok else out.reply
             for i in range(0, len(text), 80):
                 yield text[i:i + 80]

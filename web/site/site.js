@@ -201,7 +201,8 @@ const READERS = [
   ["public", "WEB", "Visitors to this website", "Same filter, and only documents chosen for publication."],
 ];
 const HIDDEN = { email: "email hidden", phone: "phone number hidden", street_address: "address hidden",
-                 postal_code_ca: "postal code hidden", payment_card: "card number hidden" };
+                 postal_code_ca: "postal code hidden", payment_card: "card number hidden", coordinates: "location hidden",
+                 iban: "bank account hidden", government_id: "ID number hidden", date_of_birth: "birth date hidden" };
 function noteWithPills(text) {
   const p = el("p", "note");
   let last = 0;
@@ -212,11 +213,14 @@ function noteWithPills(text) {
   p.append(text.slice(last));
   return p;
 }
+let gateExample = "contact";
 async function runGate() {
   const out = $("#gate-out");
+  document.querySelectorAll("#gate-presets .chip").forEach((c) => c.setAttribute("aria-pressed", String(c.dataset.example === gateExample)));
   try {
+    // Fixed examples only: the server refuses free text, so the gate cannot be probed for gaps.
     const res = await getJSON("/api/gate", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: $("#gate-text").value }) });
+      body: JSON.stringify({ example: gateExample }) });
     out.replaceChildren(...READERS.map(([key, av, who, sub], i) => {
       const card = el("div", "gate-card",
         el("div", "who", el("span", "av", av), el("div", "", el("b", "", who), el("span", "", sub))),
@@ -228,14 +232,13 @@ async function runGate() {
     out.replaceChildren(el("p", "muted", "This demo needs the live memory, which is offline right now."));
   }
 }
-$("#gate-form")?.addEventListener("submit", (e) => { e.preventDefault(); runGate(); });
 document.querySelectorAll("#gate-presets .chip").forEach((c) => c.addEventListener("click", () => {
-  $("#gate-text").value = c.dataset.text;
+  gateExample = c.dataset.example;
   runGate();
 }));
-if ($("#gate-form")) {
+if ($("#gate-presets")) {
   // Show the first example once the section comes into view, without a click.
-  const g = $("#gate-form").closest("section");
+  const g = $("#gate-presets").closest("section");
   if ("IntersectionObserver" in window) {
     const once = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) { once.disconnect(); runGate(); } });
     once.observe(g);
@@ -345,7 +348,11 @@ async function ask(question) {
     scrollLog();
   } catch (e) {
     typing.remove();
-    log.append(el("div", "msg bot", "Something went wrong: " + e.message));
+    // A burst can be refused by the tunnel before it reaches the server, without the
+    // headers a browser needs to read the reply; it surfaces here as a network error.
+    log.append(el("div", "msg bot", e instanceof TypeError
+      ? "Too many questions at once, or the memory is offline. Please wait a moment and try again."
+      : "Something went wrong: " + e.message));
   } finally {
     btn.disabled = false;
   }

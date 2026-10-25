@@ -46,7 +46,7 @@ All JSON unless noted. No authentication; rate-limited per client.
 - `POST /api/agent`: AG-UI run (https://docs.ag-ui.com). Body: `RunAgentInput` (`threadId`, `runId`, `messages`, `tools`, `context`, `state`). Response: `text/event-stream` with `RUN_STARTED`, `STEP_STARTED`, `TOOL_CALL_START/ARGS/END/RESULT` (the retrieved excerpts), `TEXT_MESSAGE_START/CONTENT/END` (the answer, citing excerpts as [n]), `RUN_FINISHED`.
 - `GET /api/search?q=<text>`: excerpts with `project`, `kind`, `where`, `status`, `snippet`.
 - `GET /api/projects`, `GET /api/graph` (module import graph), `GET /api/stats`.
-- `POST /api/gate` with `{"text": "..."}`: what each recipient class would receive.
+- `POST /api/gate` with `{"example": "contact" | "address" | "location" | "card"}`: what each recipient class would receive for that fixed synthetic note (free text is refused, so the filter cannot be probed for gaps).
 
 ## What this site does not show
 

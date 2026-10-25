@@ -77,6 +77,6 @@
     "projects": {"method": "GET", "path": "/api/projects"},
     "graph": {"method": "GET", "path": "/api/graph", "returns": "module import graph"},
     "stats": {"method": "GET", "path": "/api/stats"},
-    "gate": {"method": "POST", "path": "/api/gate", "body": {"text": "..."}, "returns": "what each recipient class would receive"}
+    "gate": {"method": "POST", "path": "/api/gate", "body": {"example": "contact | address | location | card"}, "returns": "what each recipient class would receive for that fixed synthetic note"}
   }
 }

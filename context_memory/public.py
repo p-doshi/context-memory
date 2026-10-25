@@ -38,6 +38,16 @@ def _public_source(rec_path: str, title: str | None, kind: str) -> str:
     return kind
 
 
+_QWORD = re.compile(r"[a-z0-9]{4,}")
+_QSTOP = frozenset("""this that with from have will what when where which does about into your their there
+these those than then also only such each other more most some very just like make made used uses using
+work works should could would being been were they them here project memory system""".split())
+
+
+def _stems(text: str) -> set[str]:
+    return {w[:5] for w in _QWORD.findall(text.lower()) if w not in _QSTOP}
+
+
 def search(svc, sources, query: str, k: int = 8, mode: str | None = None) -> dict:
     projects = list(sources.public_projects)
     if not projects:
@@ -45,9 +55,14 @@ def search(svc, sources, query: str, k: int = 8, mode: str | None = None) -> dic
     res = svc.memory_search(query, k=k * 2, kinds=list(sources.public_kinds), projects=projects,
                             recipient="owner", actor="public", mode=mode)
     hits, per_doc = [], {}
+    stems = _stems(query)
     for r in res["results"]:
         doc = r["provenance"]["doc_id"]
         if per_doc.get(doc, 0) >= 2 or r["project"] not in projects:
+            continue
+        # Relevance floor: a hit must share at least one meaningful word (by stem) with
+        # the query, so an unrelated query returns nothing rather than the nearest passage.
+        if stems and not stems & _stems(f"{r['title'] or ''} {r['section_path'] or ''} {r['text']}"):
             continue
         per_doc[doc] = per_doc.get(doc, 0) + 1
         body = r["text"].split("\n", 1)[-1].rsplit("\n", 1)[0]
@@ -170,10 +185,12 @@ def agent_run(svc, sources, body: dict, answerer=None, mode: str | None = None,
     thread_id = str(body.get("threadId") or uuid.uuid4())
     run_id = str(body.get("runId") or uuid.uuid4())
     messages = body.get("messages") or []
-    question = next((m.get("content", "") for m in reversed(messages)
-                     if isinstance(m, dict) and m.get("role") == "user"), "")
-    question = question if isinstance(question, str) else json.dumps(question)
-    question = re.sub(r"\s+", " ", question).strip()[:500]
+    users = [m.get("content", "") for m in messages if isinstance(m, dict) and m.get("role") == "user"]
+    users = [re.sub(r"\s+", " ", u if isinstance(u, str) else json.dumps(u)).strip()[:500] for u in users]
+    question = users[-1] if users else ""
+    # Only the visitor's own previous question is used, as retrieval context for
+    # follow-ups. Client-supplied assistant, system and tool turns are never passed on.
+    previous = users[-2] if len(users) > 1 else ""
     yield _event("RUN_STARTED", threadId=thread_id, runId=run_id)
     if not question:
         yield _event("RUN_ERROR", message="no user message in the request", code="bad_request")
@@ -186,10 +203,12 @@ def agent_run(svc, sources, body: dict, answerer=None, mode: str | None = None,
     yield _event("TOOL_CALL_END", toolCallId=call_id)
     with lock or nullcontext():
         result = search(svc, sources, question, k=6, mode=mode)
+        if previous and len(result["hits"]) < 3:  # a follow-up: add the earlier question
+            result = search(svc, sources, f"{previous} {question}"[:600], k=6, mode=mode)
     yield _event("TOOL_CALL_RESULT", messageId=f"msg_{uuid.uuid4().hex[:12]}", toolCallId=call_id,
                  content=json.dumps(result), role="tool")
     yield _event("STEP_FINISHED", stepName="retrieve")
-    history = [m for m in messages[:-1] if isinstance(m, dict)]
+    history = [{"role": "user", "content": previous}] if previous else []
     msg_id = f"msg_{uuid.uuid4().hex[:12]}"
     yield _event("STEP_STARTED", stepName="answer")
     yield _event("TEXT_MESSAGE_START", messageId=msg_id, role="assistant")

@@ -110,27 +110,25 @@
   <section class="reveal" aria-labelledby="gate-h">
     <p class="kicker">Privacy, live</p>
     <h2 id="gate-h">Who sees what?</h2>
-    <p class="muted">Say your memory holds the note below. Here is what each reader gets back. Pick an example or write your
-      own; nothing you type is stored.</p>
-    <div class="suggest" id="gate-presets">
-      <button type="button" class="chip" data-text="Email the draft to jane.doe@example.org and call her at 902-555-0147 before Friday.">Contact details</button>
-      <button type="button" class="chip" data-text="The workshop moved to 123 Example Street, Halifax B3H 4R2, room 214.">An address</button>
-      <button type="button" class="chip" data-text="Lab supplies were paid with card 4242 4242 4242 4242; reimbursement pending.">A card number</button>
+    <p class="muted">Say your memory holds a note like one of these. Pick one to see what each reader gets back.
+      (The examples are fixed on purpose: a free-text box would let anyone probe the filter for gaps.)</p>
+    <div class="suggest" id="gate-presets" role="group" aria-label="Example notes">
+      <button type="button" class="chip" data-example="contact" aria-pressed="true">Contact details</button>
+      <button type="button" class="chip" data-example="address">An address</button>
+      <button type="button" class="chip" data-example="location">GPS coordinates</button>
+      <button type="button" class="chip" data-example="card">A card number</button>
     </div>
-    <form id="gate-form" class="row">
-      <label class="sr" for="gate-text">A note in your memory</label>
-      <input id="gate-text" maxlength="600" autocomplete="off"
-             value="Email the draft to jane.doe@example.org and call her at 902-555-0147 before Friday.">
-      <button class="btn primary" type="submit">Show me</button>
-    </form>
     <div class="gate-out" id="gate-out"></div>
+    <p class="muted small">The filter recognises e-mail addresses (also written as "name [at] host [dot] ca"), phone
+      numbers, street addresses, postal codes, GPS coordinates, card numbers and IBANs, Canadian SIN and US SSN numbers,
+      dates of birth, and passwords or keys. It does not recognise names, schedules or relationships.</p>
   </section>
 
   <section class="reveal" aria-labelledby="ask-h" id="ask">
     <p class="kicker">Ask</p>
     <h2 id="ask-h">Ask how it works.</h2>
     <p class="muted" id="ask-note">A small model on the owner's laptop answers from this project's public documentation,
-      and cites what it used.</p>
+      and cites what it used. Each question is answered on its own, with your previous question as context.</p>
     <div class="chat">
       <div id="log" class="log" aria-live="polite">
         <div class="msg bot">Hi! I can explain how the memory works: privacy, speed, setup, the design choices. What would you like to know?</div>

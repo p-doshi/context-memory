@@ -63,3 +63,51 @@ def test_violation_report_has_no_values():
 def test_unknown_recipient_rejected():
     with pytest.raises(ValueError):
         gate("x", "anyone")
+
+
+# Formats from an external probe of the public gate (2026-10-25), all synthetic.
+MUST_REDACT = [
+    ("Call +1 902 555 0134.", "phone"),
+    ("Call +19025550134 tomorrow", "phone"),
+    ("Reach me at 902-555-0134.", "phone"),          # trailing period used to defeat the pattern
+    ("Office: (902) 555-0134", "phone"),
+    ("Site at 44.6366 N, -63.5917 W", "coordinates"),
+    ("Site at 44.6366° N 63.5917° W", "coordinates"),
+    ("GPS 44.6366, -63.5917 for the mooring", "coordinates"),
+    ("Mooring at 44°38'12\"N 63°35'30\"W", "coordinates"),
+    ("write to parth [at] dal [dot] ca please", "email"),
+    ("write to parth (at) dal (dot) ca", "email"),
+    ("IBAN GB82 WEST 1234 5698 7654 32 for transfers", "iban"),
+    ("IBAN GB82WEST12345698765432 for transfers", "iban"),
+    ("SIN 046 454 286 on file", "government_id"),
+    ("SSN 123-45-6789", "government_id"),
+    ("born on 1994-03-17 in Halifax", "date_of_birth"),
+    ("DOB: 17/03/1994", "date_of_birth"),
+    ("date of birth March 17, 1994", "date_of_birth"),
+]
+MUST_PASS = [
+    "recall@5 0.750 vs 0.833, MRR 0.672",
+    "AnyConnect 4.7.00136 and openconnect 9.12",
+    "Run started 2026-10-24T16:44:40Z, took 152 ms",
+    "Qwen3-Embedding-0.6B at revision 97b0c614",
+    "lr 0.0003, 0.0001 decay over 1000 steps",
+    "the hub listens on 127.0.0.1:8765",
+    "We met at noon to discuss the plan",
+]
+
+
+@pytest.mark.parametrize("text,kind", MUST_REDACT)
+def test_probe_formats_are_withheld_for_public_and_cloud(text, kind):
+    for recipient in ("public", "cloud_model", "mcp_server"):
+        r = gate(text, recipient, chunk_tier="public")
+        assert any(v["kind"] == kind for v in r.violations), (recipient, text, r.text)
+
+
+@pytest.mark.parametrize("text", MUST_PASS)
+def test_ordinary_technical_text_is_untouched(text):
+    assert gate(text, "public", chunk_tier="public").text == text
+
+
+def test_checksums_reject_lookalikes():
+    assert gate("IBAN GB00 WEST 1234 5698 7654 32", "public", chunk_tier="public").decision == "allow"
+    assert gate("SIN 046 454 287", "public", chunk_tier="public").decision == "allow"

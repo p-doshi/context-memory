@@ -123,3 +123,212 @@ def entity_graph(svc, name: str, depth: int = 1, limit: int = 150) -> dict:
 
 def audit(svc, n: int = 200) -> list[dict]:
     return svc.sqlite.audit_tail(min(n, 1000))
+
+
+# -- time-aware views (console v2) -------------------------------------------------
+#
+# "When it happened" is the content's own date where the source records one
+# (session start, conversation creation, thread update); files have none, so they
+# use the date they were first indexed.
+
+GROUPS = ["This laptop", "Other machines", "claude.ai", "Perplexity", "Files & notes"]
+
+
+def _when(meta: dict, created_at: str) -> str:
+    for k in ("first_timestamp", "created_at", "updated_at"):
+        v = meta.get(k)
+        if isinstance(v, str) and len(v) >= 10:
+            return v[:19]
+    return (created_at or "")[:19]
+
+
+def _group(kind: str, path: str, meta: dict) -> str:
+    platform = meta.get("platform")
+    if platform == "claude-code":
+        return "Other machines" if "/inbox/remote/" in (path or "") else "This laptop"
+    if platform == "claude.ai":
+        return "claude.ai"
+    if platform == "perplexity":
+        return "Perplexity"
+    return "Files & notes"
+
+
+def _docs(svc) -> list[dict]:
+    """Every document with a current passage: id, project, title, kind, group, when."""
+    out = []
+    for doc_id, project, kind, path, title, meta, created in svc.sqlite.conn.execute(
+            "SELECT d.doc_id, d.project, d.kind, d.path, d.title, d.meta, d.created_at FROM documents d "
+            "WHERE EXISTS (SELECT 1 FROM chunks c WHERE c.doc_id = d.doc_id AND c.valid_to IS NULL)"):
+        m = json.loads(meta or "{}")
+        out.append({"id": doc_id, "project": project, "kind": kind, "path": path, "title": title or path,
+                    "group": _group(kind, path, m), "when": _when(m, created)})
+    return out
+
+
+def _bucket(days: int) -> str:
+    return "day" if 0 < days <= 45 else "week" if 0 < days <= 400 else "month"
+
+
+def _bucket_key(ts: str, bucket: str) -> str:
+    from datetime import date, timedelta
+    d = date.fromisoformat(ts[:10])
+    if bucket == "week":
+        d = d - timedelta(days=d.weekday())  # Monday
+    elif bucket == "month":
+        d = d.replace(day=1)
+    return d.isoformat()
+
+
+def _since(days: int) -> str:
+    from datetime import datetime, timedelta, timezone
+    return "" if days <= 0 else (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def summary(svc, home: Path, days: int = 30) -> dict:
+    """Headline numbers with their meaning and change over the period."""
+    q = svc.sqlite.conn.execute
+    docs = _docs(svc)
+    since = _since(days)
+    prev = _since(days * 2) if days > 0 else ""
+    in_period = [d for d in docs if d["when"] >= since]
+    before = [d for d in docs if prev <= d["when"] < since] if days > 0 else []
+    bucket = _bucket(days if days > 0 else 10_000)
+    spark: dict[str, int] = {}
+    for d in in_period:
+        k = _bucket_key(d["when"], bucket)
+        spark[k] = spark.get(k, 0) + 1
+    hb_file = home / "run" / "heartbeat.json"
+    heartbeat = json.loads(hb_file.read_text()) if hb_file.exists() else {}
+    retired = q("SELECT COUNT(*) FROM chunks WHERE valid_to IS NOT NULL" + (" AND valid_to >= ?" if since else ""),
+                (since,) if since else ()).fetchone()[0]
+    return {
+        "days": days,
+        "documents": len(docs), "documents_in_period": len(in_period), "documents_previous": len(before),
+        "passages": q("SELECT COUNT(*) FROM chunks WHERE valid_to IS NULL").fetchone()[0],
+        "connections": q("SELECT COUNT(*) FROM edges WHERE valid_to IS NULL").fetchone()[0],
+        "retired_in_period": retired,
+        "projects": len({d["project"] for d in docs}),
+        "sources": {g: sum(1 for d in docs if d["group"] == g) for g in GROUPS},
+        "spark": [{"t": k, "n": spark[k]} for k in sorted(spark)],
+        "bucket": bucket,
+        "last_pass_seconds": round(time.time() - heartbeat["last_pass_end"]) if heartbeat.get("last_pass_end") else None,
+        "oldest": min((d["when"] for d in docs), default=None),
+    }
+
+
+def timeline(svc, days: int = 90) -> dict:
+    """Documents per time bucket and source group, by when they happened; plus
+    passages retired (replaced by a newer version) per bucket."""
+    q = svc.sqlite.conn.execute
+    since = _since(days)
+    bucket = _bucket(days if days > 0 else 10_000)
+    rows: dict[str, dict[str, int]] = {}
+    for d in _docs(svc):
+        if d["when"] >= since:
+            k = _bucket_key(d["when"], bucket)
+            rows.setdefault(k, {g: 0 for g in GROUPS})[d["group"]] += 1
+    retired: dict[str, int] = {}
+    for (ts,) in q("SELECT valid_to FROM chunks WHERE valid_to IS NOT NULL" + (" AND valid_to >= ?" if since else ""),
+                   (since,) if since else ()):
+        k = _bucket_key(ts, bucket)
+        retired[k] = retired.get(k, 0) + 1
+    keys = sorted(set(rows) | set(retired))
+    return {"bucket": bucket, "groups": GROUPS,
+            "rows": [{"t": k, **rows.get(k, {g: 0 for g in GROUPS}), "retired": retired.get(k, 0)} for k in keys]}
+
+
+def projects_breakdown(svc) -> list[dict]:
+    """Per project: documents by source group, first and last activity."""
+    by: dict[str, dict] = {}
+    for d in _docs(svc):
+        p = by.setdefault(d["project"], {"project": d["project"], **{g: 0 for g in GROUPS},
+                                         "total": 0, "first": d["when"], "last": d["when"]})
+        p[d["group"]] += 1
+        p["total"] += 1
+        p["first"], p["last"] = min(p["first"], d["when"]), max(p["last"], d["when"])
+    return sorted(by.values(), key=lambda p: p["last"], reverse=True)
+
+
+def project_map(svc, project: str, max_docs: int = 80, max_refs: int = 60) -> dict:
+    """A project's knowledge graph with a date on every node, for a time slider:
+    project -> documents (sessions, chats, files) -> code modules they define, and
+    the repository files that sessions mention. Large projects are sampled evenly
+    across time so early history stays visible."""
+    q = svc.sqlite.conn.execute
+    docs = sorted((d for d in _docs(svc) if d["project"] == project), key=lambda d: d["when"])
+    total = len(docs)
+    if total > max_docs:
+        step = total / max_docs
+        docs = [docs[int(i * step)] for i in range(max_docs)]
+    nodes: dict[str, dict] = {f"p:{project}": {"id": f"p:{project}", "label": project, "type": "project",
+                                               "when": docs[0]["when"] if docs else None}}
+    edges: list[dict] = []
+    by_path = {d["path"]: d for d in docs}
+    ent = {}
+    if by_path:
+        marks = ", ".join("?" * len(by_path))
+        ent = {name: eid for eid, name in q(
+            f"SELECT entity_id, name FROM entities WHERE type = 'document' AND name IN ({marks})", list(by_path))}
+    for path, eid in ent.items():
+        d = by_path[path]
+        kind = "session" if d["group"] in ("This laptop", "Other machines") else \
+               "chat" if d["kind"] == "chat" else "file"
+        did = f"d:{d['id']}"
+        nodes[did] = {"id": did, "label": d["title"][:60], "type": kind, "when": d["when"], "group": d["group"],
+                      "detail": path}
+        edges.append({"source": did, "target": f"p:{project}", "relation": "part of"})
+    if ent:
+        marks = ", ".join("?" * len(ent))
+        rev = {eid: path for path, eid in ent.items()}
+        refs: dict[str, list] = {}
+        for src, rel, dst_id, dst_name, dst_type in q(
+                f"SELECT e.src, e.relation, e.dst, x.name, x.type FROM edges e JOIN entities x ON x.entity_id = e.dst "
+                f"WHERE e.valid_to IS NULL AND e.relation IN ('defines', 'mentions') AND e.src IN ({marks})",
+                list(ent.values())):
+            d = by_path[rev[src]]
+            if rel == "defines" and dst_type == "module":
+                mid = f"m:{dst_name}"
+                n = nodes.setdefault(mid, {"id": mid, "label": dst_name.split(".")[-1], "type": "module",
+                                           "when": d["when"], "detail": dst_name, "eid": dst_id})
+                n["when"] = min(n["when"], d["when"])
+                edges.append({"source": f"d:{d['id']}", "target": mid, "relation": "defines"})
+            elif rel == "mentions":
+                refs.setdefault(dst_name, []).append(d)
+        # The repository files mentioned most often (by distinct documents).
+        for name, ds in sorted(refs.items(), key=lambda kv: -len({x["id"] for x in kv[1]}))[:max_refs]:
+            rid = f"f:{name}"
+            nodes[rid] = {"id": rid, "label": name.split("/")[-1], "type": "mentioned file",
+                          "when": min(x["when"] for x in ds), "detail": name}
+            for x in {x["id"]: x for x in ds}.values():
+                edges.append({"source": f"d:{x['id']}", "target": rid, "relation": "mentions"})
+        # Imports between modules shown.
+        mods = {n["eid"]: nid for nid, n in nodes.items() if n["type"] == "module"}
+        if mods:
+            mm = ", ".join("?" * len(mods))
+            for src, dst in q(f"SELECT src, dst FROM edges WHERE valid_to IS NULL AND relation = 'imports' "
+                              f"AND src IN ({mm}) AND dst IN ({mm})", list(mods) * 2):
+                if src != dst:
+                    edges.append({"source": mods[src], "target": mods[dst], "relation": "imports"})
+    for n in nodes.values():
+        n.pop("eid", None)
+    whens = [n["when"] for n in nodes.values() if n.get("when")]
+    return {"project": project, "documents_total": total, "documents_shown": len(docs),
+            "nodes": list(nodes.values()), "edges": edges,
+            "range": [min(whens), max(whens)] if whens else None}
+
+
+def activity(svc, n: int = 60) -> list[dict]:
+    """Recent audit events in plain words (newest first)."""
+    words = {"ingest": "indexed", "retire": "retired", "rename_project": "renamed project",
+             "public_export": "published the public copy", "device_add": "added device", "device_pair": "paired device",
+             "device_revoke": "revoked device", "device_rotate": "new token for device", "reconcile": "repaired the stores",
+             "graph_rebuild": "rebuilt the knowledge graph", "snapshot": "backed up", "public_agent": "visitor question"}
+    out = []
+    for r in svc.sqlite.audit_tail(min(n * 4, 2000)):
+        if r["action"] in ("search", "get", "context", "public_search") or r["outcome"] == "unchanged":
+            continue  # reads, not changes
+        out.append({"ts": r["ts"], "what": words.get(r["action"], r["action"].replace("_", " ")),
+                    "target": (r["target"] or "")[-90:], "outcome": r["outcome"], "actor": r["actor"]})
+        if len(out) >= n:
+            break
+    return out
