@@ -24,6 +24,7 @@ import hashlib
 import re
 import secrets
 import threading
+import time
 from contextvars import ContextVar
 from pathlib import Path
 
@@ -44,26 +45,48 @@ def _hash(token: str) -> str:
 
 # -- device registry -------------------------------------------------------
 
-def add_device(db: SQLiteStore, name: str, account: str | None, rotate: bool = False) -> str:
+SCOPES = {"read", "write", "upload", "context", "public"}
+DEFAULT_SCOPES = "read,write,upload,context"
+
+# Route prefix -> scope a device needs. /v1/health only needs a valid token.
+ROUTE_SCOPES = [("/mcp", "read"), ("/v1/sessions", "upload"), ("/v1/context", "context"),
+                ("/v1/public", "public"), ("/v1/console", "admin")]
+
+
+def required_scope(path: str) -> str | None:
+    return next((s for prefix, s in ROUTE_SCOPES if path.startswith(prefix)), None)
+
+
+def device_scopes(dev: dict) -> set[str]:
+    return set(filter(None, (dev.get("scopes") or DEFAULT_SCOPES).split(",")))
+
+
+def add_device(db: SQLiteStore, name: str, account: str | None, rotate: bool = False,
+               scopes: str = DEFAULT_SCOPES) -> str:
     """Register a device and return its token. The token is not stored."""
     name = slugify(name, "")
     if not name:
         raise ValueError("device name must contain letters or digits")
+    bad = set(scopes.split(",")) - SCOPES - {"admin"}
+    if bad:
+        raise ValueError(f"unknown scopes {sorted(bad)}; allowed: {sorted(SCOPES | {'admin'})}")
     token = "cmh_" + secrets.token_urlsafe(32)
     if rotate and db.conn.execute("SELECT 1 FROM devices WHERE name = ?", (name,)).fetchone():
         # New token for an existing device; the old token stops working at once.
         db.conn.execute("UPDATE devices SET token_sha256 = ?, revoked_at = NULL, "
-                        "account = coalesce(?, account) WHERE name = ?", (_hash(token), account, name))
-        db.audit("cli", "device_rotate", name, "ok", {"account": account})
+                        "account = coalesce(?, account), scopes = ? WHERE name = ?",
+                        (_hash(token), account, scopes, name))
+        db.audit("cli", "device_rotate", name, "ok", {"account": account, "scopes": scopes})
         return token
     db.conn.execute(
-        "INSERT INTO devices (device_id, name, account, token_sha256, created_at) VALUES (?, ?, ?, ?, ?)",
-        (new_id("dev"), name, account, _hash(token), utcnow()))
-    db.audit("cli", "device_add", name, "ok", {"account": account})
+        "INSERT INTO devices (device_id, name, account, token_sha256, created_at, scopes) "
+        "VALUES (?, ?, ?, ?, ?, ?)", (new_id("dev"), name, account, _hash(token), utcnow(), scopes))
+    db.audit("cli", "device_add", name, "ok", {"account": account, "scopes": scopes})
     return token
 
 
-def make_bundle(db: SQLiteStore, name: str, account: str | None, devices_dir: Path) -> Path:
+def make_bundle(db: SQLiteStore, name: str, account: str | None, devices_dir: Path,
+                scopes: str = DEFAULT_SCOPES) -> Path:
     """Register a device and write a setup bundle: the token (never printed) plus
     the client files. On Windows the folder is restricted to the current user."""
     import shutil
@@ -80,7 +103,7 @@ def make_bundle(db: SQLiteStore, name: str, account: str | None, devices_dir: Pa
                        capture_output=True, creationflags=NO_WINDOW)
     for f in ("cmh_push.py", "setup_remote.sh", "claude_memory.md"):
         shutil.copy2(client / f, bundle / f)
-    token = add_device(db, name, account, rotate=True)
+    token = add_device(db, name, account, rotate=True, scopes=scopes)
     (bundle / "cmh.token").write_text(token)
     if os.name != "nt":
         (bundle / "cmh.token").chmod(0o600)
@@ -95,7 +118,7 @@ def revoke_device(db: SQLiteStore, name: str) -> bool:
 
 
 def list_devices(db: SQLiteStore) -> list[dict]:
-    rows = db.conn.execute("SELECT name, account, created_at, revoked_at, last_seen FROM devices "
+    rows = db.conn.execute("SELECT name, account, scopes, created_at, revoked_at, last_seen FROM devices "
                            "ORDER BY name").fetchall()
     return [dict(r) for r in rows]
 
@@ -125,7 +148,12 @@ def build_app(settings: Settings, embedder: Embedder, service: MemoryService | N
     lock = threading.RLock()
     inbox = settings.data_dir.parent / "inbox" / "remote"
 
-    mcp = build_mcp(lambda: svc, allow_local_ingest=False, actor="hub", lock=lock)
+    def authorize(scope: str) -> bool:
+        dev = current_device.get()
+        return dev is not None and scope in device_scopes(dev)
+
+    mcp = build_mcp(lambda: svc, allow_local_ingest=False, actor="hub", lock=lock,
+                    authorize=authorize)
 
     @mcp.custom_route("/v1/health", methods=["GET"])
     async def health(request: Request):
@@ -176,17 +204,36 @@ def build_app(settings: Settings, embedder: Embedder, service: MemoryService | N
                              {"bytes": len(body)})
         return JSONResponse({"device": dev["name"], "status": "queued"}, status_code=202)
 
+    denied_log: dict[str, list] = {}  # path -> [last audit time, suppressed count]
+
     class BearerAuth(BaseHTTPMiddleware):
         async def dispatch(self, request, call_next):
             header = request.headers.get("authorization", "")
             token = header[7:].strip() if header.lower().startswith("bearer ") else ""
+            path = request.url.path
             with lock:
                 dev = lookup_device(svc.sqlite, token) if token else None
                 if dev is None:
-                    svc.sqlite.audit("hub", "auth", request.url.path, "denied",
-                                     {"client": request.client.host if request.client else None})
+                    # At most one audit row per path per 10 s, carrying how many
+                    # denials were folded into it: bad-token floods through a
+                    # tunnel cannot fill the disk. (Per-IP limits would lock out
+                    # every user, since all tunnel traffic arrives from 127.0.0.1.)
+                    entry = denied_log.setdefault(path, [0.0, 0])
+                    if time.time() - entry[0] >= 10:
+                        svc.sqlite.audit("hub", "auth", path, "denied",
+                                         {"client": request.client.host if request.client else None,
+                                          "suppressed_since_last": entry[1]})
+                        denied_log[path] = [time.time(), 0]
+                    else:
+                        entry[1] += 1
             if dev is None:
                 return JSONResponse({"error": "unauthorized"}, status_code=401)
+            need = required_scope(path)
+            if need and need not in device_scopes(dev):
+                with lock:
+                    svc.sqlite.audit("hub", "scope", path, "denied",
+                                     {"device": dev["name"], "needs": need})
+                return JSONResponse({"error": f"device lacks scope '{need}'"}, status_code=403)
             reset = current_device.set(dev)
             try:
                 return await call_next(request)

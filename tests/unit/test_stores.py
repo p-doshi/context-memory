@@ -19,7 +19,7 @@ def test_audit_log_is_append_only(tmp_path):
 def test_reopen_is_idempotent_and_versioned(tmp_path):
     SQLiteStore(tmp_path / "m.sqlite3").close()
     db = SQLiteStore(tmp_path / "m.sqlite3")
-    assert db.conn.execute("PRAGMA user_version").fetchone()[0] == 2
+    assert db.conn.execute("PRAGMA user_version").fetchone()[0] == 3
 
 
 def test_refuses_newer_schema(tmp_path):
@@ -83,7 +83,7 @@ def test_v1_database_migrates_and_backfills_fts(tmp_path):
     db.conn.execute("PRAGMA user_version = 1")
     db.close()
     db = SQLiteStore(path)
-    assert db.conn.execute("PRAGMA user_version").fetchone()[0] == 2
+    assert db.conn.execute("PRAGMA user_version").fetchone()[0] == 3
     assert [h["chunk_id"] for h in db.bm25_search("audit_log_no_update", 5)] == ["c"]
 
 
@@ -158,3 +158,16 @@ def test_snapshot_is_verified_and_retained(svc, settings):
     assert not (latest / "config" / "devices").exists()     # tokens never backed up
     assert backup.verify(latest, svc.embedder.dim, svc.embedder.model_name)["ok"]
     assert backup.last_snapshot_age(home) < 60
+
+
+def test_audit_chain_verifies_and_detects_tampering(tmp_path):
+    db = SQLiteStore(tmp_path / "m.sqlite3")
+    for i in range(5):
+        db.audit("t", "act", f"target{i}", "ok", {"i": i})
+    v = db.verify_audit_chain()
+    assert v["ok"] and v["rows"] == 5 and len(v["head"]) == 64
+    # Even someone able to drop the append-only trigger cannot edit silently.
+    db.conn.execute("DROP TRIGGER audit_log_no_update")
+    db.conn.execute("UPDATE audit_log SET outcome = 'forged' WHERE target = 'target2'")
+    v = db.verify_audit_chain()
+    assert not v["ok"] and v["reason"] == "hash mismatch"

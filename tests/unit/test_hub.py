@@ -175,3 +175,30 @@ def test_remote_subagent_upload_keeps_layout(client, svc, settings):
     assert process_remote_inbox(svc, settings.data_dir.parent, {}) == {"created": 1}
     hit = svc.memory_search("tidal harmonics")["results"][0]
     assert "subagent" in hit["tags"] and hit["project"] == "ocean"
+
+
+def test_scopes_are_enforced(client, svc):
+    ro = hub.add_device(svc.sqlite, "readonly", None, scopes="read")
+    pub = hub.add_device(svc.sqlite, "visitor", None, scopes="public")
+    h = lambda t: {"Authorization": f"Bearer {t}"}  # noqa: E731
+    assert client.get("/v1/health", headers=h(ro)).status_code == 200
+    assert client.post("/v1/sessions", content=b"x", headers={**h(ro), "X-Session-Id": "s"}).status_code == 403
+    assert client.get("/v1/context", params={"cwd": "/a"}, headers=h(ro)).status_code == 403
+    assert client.post("/mcp", json={}, headers=h(pub)).status_code == 403
+    with pytest.raises(ValueError):
+        hub.add_device(svc.sqlite, "bad", None, scopes="read,root")
+    assert {d["name"]: d["scopes"] for d in hub.list_devices(svc.sqlite)}["readonly"] == "read"
+
+
+def test_memory_write_needs_write_scope(svc):
+    m = build_mcp(lambda: svc, authorize=lambda scope: scope != "write")
+    res = asyncio.run(m.call_tool("memory_write", {"text": "x", "kind": "note", "project": "p"}))
+    payload = json.loads(res.content[0].text) if hasattr(res, "content") else res
+    assert "read-only" in json.dumps(payload)
+
+
+def test_denied_auth_audit_is_throttled(client, svc):
+    for _ in range(25):
+        client.get("/v1/health", headers={"Authorization": "Bearer wrong"})
+    denials = [r for r in svc.sqlite.audit_tail(50) if r["action"] == "auth" and r["outcome"] == "denied"]
+    assert len(denials) == 1

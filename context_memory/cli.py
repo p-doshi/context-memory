@@ -91,12 +91,15 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("device", help="machines allowed to use the hub")
     s.add_argument("action", choices=["add", "list", "revoke"])
     s.add_argument("name", nargs="?", help="e.g. cluster, server5, laptop2")
+    s.add_argument("--scopes", default="read,write,upload,context",
+                   help="comma list of read, write, upload, context, public, admin")
     s.add_argument("--bundle", action="store_true",
                    help="write the token and client files to <home>/config/devices/<name>-bundle "
                         "instead of printing the token")
     s.add_argument("--account", help="default Claude account label for its sessions")
 
     sub.add_parser("hub", help="run only the hub (HTTP MCP + session upload), no indexing")
+    sub.add_parser("security-check", help="report on the security posture of this install")
 
     sub.add_parser("accounts", help="list accounts from sources.toml (no secrets)")
     s = sub.add_parser("secret", help="manage API keys in the OS keychain")
@@ -157,13 +160,14 @@ def main(argv: list[str] | None = None) -> int:
                 return 2
             elif args.action == "add" and args.bundle:
                 bundle = hub.make_bundle(db, args.name, args.account,
-                                         settings.data_dir.parent / "config" / "devices")
+                                         settings.data_dir.parent / "config" / "devices",
+                                         scopes=args.scopes)
                 print(f"device {args.name!r} added; bundle (token inside, owner-only): {bundle}")
                 print("copy it and run it on the machine (the bundle deletes itself afterwards):")
                 print(f"  scp -r \"{bundle}\" <host>:~/cmh-bundle")
                 print("  ssh <host> \"bash ~/cmh-bundle/setup_remote.sh\"")
             elif args.action == "add":
-                token = hub.add_device(db, args.name, args.account)
+                token = hub.add_device(db, args.name, args.account, scopes=args.scopes)
                 print(f"device {args.name!r} added. Its token (shown once, store it on that machine):")
                 print(token)
             else:
@@ -171,6 +175,17 @@ def main(argv: list[str] | None = None) -> int:
         finally:
             db.close()
         return 0
+    if args.cmd == "security-check":
+        from context_memory import security_check
+        from context_memory.memory.sqlite_store import SQLiteStore
+
+        class _Svc:  # SQLite only; no embedding model needed
+            sqlite = SQLiteStore(settings.sqlite_path)
+        results = security_check.run(settings, _Svc())
+        width = max(len(r["check"]) for r in results)
+        for r in results:
+            print(f"{r['status']:8s} {r['check']:{width}s}  {r['detail']}")
+        return 1 if any(r["status"] == "FAIL" for r in results) else 0
     if args.cmd == "hub":
         from context_memory.memory.embedder import make_embedder
         from context_memory.server.hub import serve

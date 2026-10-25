@@ -64,8 +64,12 @@ def make_snapshot(svc, home: Path, keep: int = 7) -> dict:
         if remote.exists():
             shutil.copytree(remote, tmp / "inbox-remote")
         result = verify(tmp, svc.embedder.dim, svc.embedder.model_name)
+        chain = svc.sqlite.verify_audit_chain()
         manifest = {"created": datetime.now().isoformat(timespec="seconds"), **result,
-                    "bytes": _dir_bytes(tmp), "seconds": round(time.time() - t0, 1)}
+                    "bytes": _dir_bytes(tmp), "seconds": round(time.time() - t0, 1),
+                    # An outside copy of the audit chain head: later tampering with
+                    # the log no longer matches the head recorded here.
+                    "audit_chain": {k: chain.get(k) for k in ("ok", "rows", "head", "broken_at")}}
         (tmp / "manifest.json").write_text(json.dumps(manifest, indent=2))
         if not result["ok"]:
             raise RuntimeError(f"snapshot failed verification: {result}")

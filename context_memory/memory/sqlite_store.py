@@ -6,6 +6,7 @@ what vector search needs, and search results are hydrated from here.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import sqlite3
@@ -15,7 +16,16 @@ from typing import Any, Iterator
 
 from context_memory.util import utcnow
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
+
+# v3: device permission scopes; tamper-evident audit chain. Each audit row
+# written from v3 on stores hash = sha256(previous hash | row fields). Rows
+# from before v3 have NULL hash; the chain starts at the first hashed row.
+V3_MIGRATION = """
+ALTER TABLE devices ADD COLUMN scopes TEXT NOT NULL DEFAULT 'read,write,upload,context';
+ALTER TABLE audit_log ADD COLUMN hash TEXT;
+"""
+GENESIS = "0" * 64
 
 # v2: full-text index over chunks, kept in step by a trigger. Retired chunks
 # stay indexed and are filtered by joining on chunks.valid_to.
@@ -201,6 +211,13 @@ class SQLiteStore:
                 "INSERT INTO chunks_fts (text, title, section_path, chunk_id) "
                 "SELECT text, coalesce(title, ''), coalesce(section_path, ''), chunk_id FROM chunks "
                 "WHERE chunk_id NOT IN (SELECT chunk_id FROM chunks_fts)")
+        if version < 3:
+            # Idempotent: add each v3 column only if it is not there yet.
+            for table, column, ddl in (("devices", "scopes", V3_MIGRATION.splitlines()[1]),
+                                       ("audit_log", "hash", V3_MIGRATION.splitlines()[2])):
+                cols = {r[1] for r in self.conn.execute(f"PRAGMA table_info({table})")}
+                if column not in cols:
+                    self.conn.execute(ddl.rstrip(";"))
         self.conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
     def close(self) -> None:
@@ -219,13 +236,50 @@ class SQLiteStore:
 
     # -- audit -------------------------------------------------------------
 
+    @staticmethod
+    def _audit_hash(prev: str, ts: str, actor: str, action: str, target: str | None,
+                    outcome: str, details: str) -> str:
+        payload = "\x1f".join([prev, ts, actor, action, target or "", outcome, details])
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
     def audit(self, actor: str, action: str, target: str | None, outcome: str,
               details: dict | None = None) -> None:
-        self.conn.execute(
-            "INSERT INTO audit_log (ts, actor, action, target, outcome, details) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (utcnow(), actor, action, target, outcome, json.dumps(details or {})),
-        )
+        """Append a hash-chained audit row. The read of the previous hash and the
+        insert run under the write lock, so concurrent writers (daemon, hub)
+        cannot fork the chain."""
+        ts, det = utcnow(), json.dumps(details or {})
+        own_txn = not self.conn.in_transaction
+        if own_txn:
+            self.conn.execute("BEGIN IMMEDIATE")
+        try:
+            row = self.conn.execute(
+                "SELECT hash FROM audit_log WHERE hash IS NOT NULL ORDER BY seq DESC LIMIT 1").fetchone()
+            h = self._audit_hash(row[0] if row else GENESIS, ts, actor, action, target, outcome, det)
+            self.conn.execute(
+                "INSERT INTO audit_log (ts, actor, action, target, outcome, details, hash) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)", (ts, actor, action, target, outcome, det, h))
+        except BaseException:
+            if own_txn:
+                self.conn.execute("ROLLBACK")
+            raise
+        if own_txn:
+            self.conn.execute("COMMIT")
+
+    def verify_audit_chain(self) -> dict:
+        """Recompute the chain. Any edited, deleted or inserted row after the
+        chain started shows up as the first broken sequence number."""
+        prev, n, started = GENESIS, 0, False
+        for seq, ts, actor, action, target, outcome, det, h in self.conn.execute(
+                "SELECT seq, ts, actor, action, target, outcome, details, hash FROM audit_log ORDER BY seq"):
+            if h is None:
+                if started:
+                    return {"ok": False, "broken_at": seq, "reason": "unhashed row inside chain", "rows": n}
+                continue
+            started = True
+            if self._audit_hash(prev, ts, actor, action, target, outcome, det) != h:
+                return {"ok": False, "broken_at": seq, "reason": "hash mismatch", "rows": n}
+            prev, n = h, n + 1
+        return {"ok": True, "rows": n, "head": prev}
 
     def audit_tail(self, n: int = 20) -> list[dict]:
         rows = self.conn.execute(

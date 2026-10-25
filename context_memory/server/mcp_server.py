@@ -30,7 +30,8 @@ def _error(e: Exception) -> dict:
 
 
 def build_mcp(get_service: Callable[[], MemoryService], allow_local_ingest: bool = True,
-              actor: str = "mcp", lock=None) -> MCPServer:
+              actor: str = "mcp", lock=None,
+              authorize: Callable[[str], bool] = lambda scope: True) -> MCPServer:
     """Register the memory tools against a service factory. The hub passes
     allow_local_ingest=False (a remote client must not ask the laptop to read
     laptop paths) and a lock that serialises tool calls on its connection."""
@@ -84,6 +85,8 @@ def build_mcp(get_service: Callable[[], MemoryService], allow_local_ingest: bool
         Content containing credentials is rejected at ingress. Write only facts
         that have been checked against their source.
         """
+        if not authorize("write"):
+            return {"status": "error", "error": "this device is read-only (no 'write' scope)"}
         try:
             return get_service().memory_write(text=text, kind=kind, project=project, title=title,
                                               source=source, tags=tags, links=links, actor=actor)
