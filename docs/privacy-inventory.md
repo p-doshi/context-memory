@@ -36,8 +36,9 @@ Application-level encryption is roadmap Week 6.
 | Hugging Face | IP address, model name, library versions on each model load | **Off by default** (`HF_HUB_OFFLINE=1`, telemetry disabled). Measured: zero network calls during model load and search. `CMH_ALLOW_MODEL_DOWNLOAD=1` only to fetch a model. |
 | PyPI, download.pytorch.org, GitHub releases (Python builds via uv) | Package downloads at install time | No user data. |
 | GitHub releases (llama.cpp build b11875), Hugging Face (Qwen/Qwen3-1.7B-GGUF at commit 90862c4b) | One-time downloads of the visitor answer model and its server; SHA-256 checked against the published digests | No user data. The model runs offline on loopback. |
-| Cloudflare (tunnel) | When the public site is enabled: visitor requests and responses for the public node pass through Cloudflare's edge in plain text there. They contain only public material and visitors' own questions. | Not yet set up (needs the owner's Cloudflare account and domain). The private hub is never behind the tunnel. |
-| Vercel | Hosts the static site files (no memory content); visitors' browsers then call the API host directly | Not yet set up. |
+| Cloudflare (quick tunnel, cloudflared 2026.10.3, SHA-256 checked) | Visitor requests and responses for the public node pass through Cloudflare's edge in plain text there: public material and visitors' own questions only. No Cloudflare account; random trycloudflare.com address, no uptime guarantee, 200 concurrent requests, no server-sent events (Cloudflare's Quick Tunnels page). Cloudflare's edge also refuses known AI training crawlers (seen: ClaudeBot, GPTBot get 403; Claude-User, curl, httpx pass). | Active since 2026-10-25. Only port 8787 (the public node) is behind it; the private hub is never behind the tunnel. |
+| GitHub (site repository, private) | The static site files and the current tunnel address, pushed by the daemon when either changes | Active. No memory content. |
+| Vercel | Will host the static site files from that repository; visitors' browsers then call the tunnel address directly | Waiting for the owner to import the repository. |
 | Google Fonts | Not used: the site uses system font stacks so visitors' browsers contact no font CDN | — |
 
 ## Checked and not sending anything

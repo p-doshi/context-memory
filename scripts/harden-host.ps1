@@ -54,10 +54,14 @@ if ($Remove) {
 # The interpreters: venv launchers plus the base build they start.
 $cfg = Get-Content (Join-Path $Repo ".venv\pyvenv.cfg")
 $base = (($cfg | Where-Object { $_ -match '^\s*home\s*=' }) -replace '^\s*home\s*=\s*', '').Trim()
+# The visitor answer model (llama-server) never needs the network either; it is
+# taken from CMH_LLM_SERVER_EXE when set. cloudflared is deliberately not listed:
+# carrying visitor traffic is its job.
+$llm = [Environment]::GetEnvironmentVariable("CMH_LLM_SERVER_EXE", "User")
 $programs = @(
     (Join-Path $Repo ".venv\Scripts\python.exe"), (Join-Path $Repo ".venv\Scripts\pythonw.exe"),
-    (Join-Path $base "python.exe"), (Join-Path $base "pythonw.exe")
-) | Where-Object { Test-Path $_ }
+    (Join-Path $base "python.exe"), (Join-Path $base "pythonw.exe"), $llm
+) | Where-Object { $_ -and (Test-Path $_) }
 
 New-NetFirewallRule -DisplayName $InboundName -Direction Inbound -Protocol TCP -LocalPort $HubPort `
     -Action Block -Profile Any | Out-Null
