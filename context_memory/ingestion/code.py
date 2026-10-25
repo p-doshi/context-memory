@@ -194,6 +194,8 @@ def ingest_codebase(svc: MemoryService, root: Path, project: str, max_files: int
                     actor: str = "daemon") -> list[dict]:
     root = check_allowed(Path(root), svc.settings.ingest_roots)
     results: list[dict] = []
+    seen: set[str] = set()
+    complete = True
     for p in list_files(root):
         suffix = p.suffix
         if suffix not in CODE_SUFFIXES and suffix.lower() not in MARKDOWN_SUFFIXES:
@@ -201,7 +203,9 @@ def ingest_codebase(svc: MemoryService, root: Path, project: str, max_files: int
         if len(results) >= max_files:
             results.append({"path": str(p), "status": "stopped",
                             "error": f"file budget of {max_files} reached"})
+            complete = False
             break
+        seen.add(p.resolve().as_posix())
         try:
             if p.stat().st_size == 0 or not p.read_bytes().strip():
                 results.append({"path": str(p), "status": "empty"})
@@ -213,4 +217,8 @@ def ingest_codebase(svc: MemoryService, root: Path, project: str, max_files: int
             results.append({"path": str(p), **r})
         except (IngressRejected, PathNotAllowed, UnicodeDecodeError, ValueError) as e:
             results.append({"path": str(p), "status": "rejected", "error": str(e)})
+    # Only a complete pass can tell that a file is gone.
+    if complete:
+        for _ in range(svc.retire_missing(root, seen, actor=actor)):
+            results.append({"path": None, "status": "retired-deleted"})
     return results

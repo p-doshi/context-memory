@@ -207,3 +207,38 @@ def test_memory_get_respects_cloud_denied_projects(svc):
     cid = svc.sqlite.current_chunk_ids(r["doc_id"])[0]
     assert svc.memory_get([cid], recipient="cloud_model")["not_available"] == [cid]
     assert svc.memory_get([cid], recipient="owner")["chunks"]
+
+
+def test_source_verification_statuses(svc, settings):
+    f = settings.ingest_roots[0] / "loss.md"
+    f.write_text("# Loss\nThe spectral loss weight is 0.3.", encoding="utf-8")
+    ingest_markdown_file(svc, f, "ocean")
+    r = svc.memory_search("spectral loss weight", project="ocean")
+    assert r["results"][0]["provenance"]["verification_status"] == "verified"
+    assert r["verification"]["verified"] == 1
+    f.write_text("# Loss\nThe spectral loss weight is 0.5.", encoding="utf-8")   # edited, not re-ingested
+    r = svc.memory_search("spectral loss weight", project="ocean")
+    assert r["results"][0]["provenance"]["verification_status"] == "stale"
+    assert any(w["level"] == "warning" and "changed" in w["message"] for w in r["warnings"])
+    f.unlink()
+    r = svc.memory_search("spectral loss weight", project="ocean")
+    assert r["results"][0]["provenance"]["verification_status"] == "missing"
+    svc.memory_write(text="chat-like note about spectral loss", kind="note", project="ocean")
+    statuses = {x["provenance"]["verification_status"] for x in svc.memory_search("spectral", project="ocean")["results"]}
+    assert "unverified" in statuses                      # manual notes have no source file
+
+
+def test_deleted_files_are_retired_on_complete_pass(svc, settings):
+    root = settings.ingest_roots[0]
+    (root / "a.md").write_text("# A\nalpha topic", encoding="utf-8")
+    (root / "b.md").write_text("# B\nbeta topic", encoding="utf-8")
+    ingest_markdown_dir(svc, root, "p")
+    (root / "b.md").unlink()
+    res = ingest_markdown_dir(svc, root, "p")
+    assert sum(r["status"] == "retired-deleted" for r in res) == 1
+    assert all("b.md" not in x["provenance"]["source_path"]
+               for x in svc.memory_search("beta topic", project="p")["results"])
+    # A pass cut short by its file budget must not retire anything.
+    (root / "c.md").write_text("# C\ngamma", encoding="utf-8")
+    res = ingest_markdown_dir(svc, root, "p", max_files=1)
+    assert not any(r["status"] == "retired-deleted" for r in res)

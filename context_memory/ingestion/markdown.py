@@ -71,6 +71,8 @@ def ingest_markdown_dir(svc: MemoryService, root: Path, project: str,
                         max_files: int = 200, actor: str = "cli") -> list[dict]:
     root = check_allowed(Path(root), svc.settings.ingest_roots)
     results: list[dict] = []
+    seen: set[str] = set()
+    complete = True
     for p in sorted(root.rglob("*")):
         if any(part in SKIP_DIRS for part in p.relative_to(root).parts):
             continue
@@ -79,9 +81,15 @@ def ingest_markdown_dir(svc: MemoryService, root: Path, project: str,
         if len(results) >= max_files:
             results.append({"path": str(p), "status": "stopped",
                             "error": f"file budget of {max_files} reached"})
+            complete = False
             break
+        seen.add(p.resolve().as_posix())
         try:
             results.append({"path": str(p), **ingest_markdown_file(svc, p, project, actor)})
         except (IngressRejected, PathNotAllowed, UnicodeDecodeError) as e:
             results.append({"path": str(p), "status": "rejected", "error": str(e)})
+    # Only a complete pass can tell that a file is gone.
+    if complete:
+        for _ in range(svc.retire_missing(root, seen, actor=actor)):
+            results.append({"path": None, "status": "retired-deleted"})
     return results
