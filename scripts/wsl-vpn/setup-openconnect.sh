@@ -28,7 +28,8 @@ apt-get update -qq
 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq openconnect pipx netcat-openbsd \
   libnss3 libxcomposite1 libxdamage1 libxrandr2 libxtst6 libxkbcommon0 libxkbcommon-x11-0 \
   libegl1 libgl1 libasound2t64 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 \
-  libxcb-xinerama0 libxcb-randr0 libxcb-render-util0 libxcb-image0 libdbus-1-3 fonts-dejavu-core >/dev/null
+  libxcb-xinerama0 libxcb-randr0 libxcb-render-util0 libxcb-image0 libdbus-1-3 fonts-dejavu-core \
+  libxkbfile1 libpulse0 >/dev/null
 as_user pipx install vpn-slice >/dev/null 2>&1 || as_user pipx upgrade vpn-slice >/dev/null 2>&1 || true
 ln -sf "$H/.local/bin/vpn-slice" /usr/local/bin/vpn-slice
 openconnect --version | head -1
@@ -91,10 +92,19 @@ chmod 440 /etc/sudoers.d/openconnect
 visudo -cf /etc/sudoers.d/openconnect
 
 echo "== 5. dal-vpn command (foreground; the daemon restarts it)"
+# Dal's server offers only the embedded-browser SAML flow (openconnect
+# --external-browser gets "No SSO handler"), so the login runs in
+# openconnect-sso's Qt WebEngine window through WSLg.
+rm -f /usr/local/bin/win-browser
 cat > /usr/local/bin/dal-vpn <<EOF
 #!/bin/bash
 # Dal VPN, split tunnel: only 129.173.0.0/16 goes through it. Foreground, so a
 # supervisor (the context-memory daemon) can restart it. Log: /tmp/vpn.log
+# WSLg: Chromium's GPU path renders a blank window and its sandbox stalls the
+# renderer inside the VM; draw in software without the sandbox (the page is
+# Dal's and Microsoft's login only).
+export QTWEBENGINE_DISABLE_SANDBOX=1 LIBGL_ALWAYS_SOFTWARE=1 QT_QUICK_BACKEND=software
+export QTWEBENGINE_CHROMIUM_FLAGS="--disable-gpu --disable-gpu-compositing --no-sandbox"
 exec "$H/.local/bin/openconnect-sso" --server vpn.its.dal.ca --authgroup DAL -- \\
   --script "vpn-slice 129.173.0.0/16" --reconnect-timeout 30 --force-dpd 10 >>/tmp/vpn.log 2>&1
 EOF
