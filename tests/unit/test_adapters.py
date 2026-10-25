@@ -302,3 +302,19 @@ def test_reconcile_closes_abandoned_jobs(svc):
     assert svc.reconcile()["abandoned_jobs_closed"] == 1
     status = dict(svc.sqlite.conn.execute("SELECT job_id, status FROM ingestion_jobs").fetchall())
     assert status["old"] == "failed" and status["fresh"] == "running"
+
+
+def test_subagent_transcripts_are_indexed_under_parent_project(svc, tmp_path):
+    cfg = tmp_path / "claude"
+    parent = cfg / "projects" / "c--work-Ocean-Model" / "s1.jsonl"
+    sub = cfg / "projects" / "c--work-Ocean-Model" / "s1" / "subagents" / "agent-abc.jsonl"
+    _session(parent, [_user("main question", "u1"), _assistant([{"type": "text", "text": "ok"}])])
+    rec = _user("subagent task about tidal harmonics", "u2")
+    rec["isSidechain"] = True
+    _session(sub, [rec, _assistant([{"type": "text", "text": "harmonics found"}])])
+    for p in (parent, sub):
+        os.utime(p, (1_700_000_000, 1_700_000_000))
+    res = ingest_config_dir(svc, cfg, "acct", idle_seconds=600)
+    assert sorted(r["status"] for r in res) == ["created", "created"]
+    hit = svc.memory_search("tidal harmonics")["results"][0]
+    assert hit["project"] == "ocean-model" and "subagent" in hit["tags"]

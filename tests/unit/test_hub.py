@@ -163,3 +163,15 @@ def test_push_client_context_notes_unreachable_hub(tmp_path):
                        text=True, env=env, capture_output=True, timeout=15)
     assert p.returncode == 0                               # never fails the session
     assert "not reachable" in json.loads(p.stdout)["hookSpecificOutput"]["additionalContext"]
+
+
+def test_remote_subagent_upload_keeps_layout(client, svc, settings):
+    from context_memory.server.daemon import process_remote_inbox
+    token = hub.add_device(svc.sqlite, "srv", "acct")
+    r = client.post("/v1/sessions", content=_transcript("subagent looked at tidal harmonics"),
+                    headers={"Authorization": f"Bearer {token}", "X-Session-Id": "agent-x",
+                             "X-Project-Dir": "-home-p-ocean", "X-Parent-Session": "s-9"})
+    assert r.status_code == 202
+    assert process_remote_inbox(svc, settings.data_dir.parent, {}) == {"created": 1}
+    hit = svc.memory_search("tidal harmonics")["results"][0]
+    assert "subagent" in hit["tags"] and hit["project"] == "ocean"

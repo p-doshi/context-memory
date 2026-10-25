@@ -134,32 +134,40 @@ def project_slug(cwd: str | None, fallback: str) -> str:
 
 
 def discover(config_dir: Path) -> list[Path]:
+    """Session transcripts plus subagent transcripts
+    (<project>/<session>/subagents/agent-*.jsonl)."""
     root = Path(config_dir) / "projects"
     if not root.is_dir():
         return []
-    return sorted(p for p in root.glob("*/*.jsonl") if p.is_file())
+    found = list(root.glob("*/*.jsonl")) + list(root.glob("*/*/subagents/*.jsonl"))
+    return sorted(p for p in found if p.is_file())
 
 
 def ingest_session(svc: MemoryService, path: Path, account: str,
-                   project_map: dict[str, str] | None = None, actor: str = "daemon") -> dict:
+                   project_map: dict[str, str] | None = None, actor: str = "daemon",
+                   project_dir: str | None = None) -> dict:
     s = parse_session(path)
     if not s.turns:
         return {"status": "empty", "session_id": s.session_id}
-    project_dir = path.parent.name
+    subagent = path.parent.name == "subagents"
+    parent_session = path.parents[1].name if subagent else None
+    project_dir = project_dir or (path.parents[2].name if subagent else path.parent.name)
     project = (project_map or {}).get(project_dir) or project_slug(s.cwd, project_dir)
+    tags = ["claude-code", f"account:{account}"] + (["subagent"] if subagent else [])
     return svc.ingest_text(
         text=render(s),
         project=project,
         source="claude",
         kind="chat",
         path=path.as_posix(),
-        title=s.title,
+        title=s.title or (f"Subagent {s.session_id[:14]}" if subagent else None),
         doc_id=stable_id("d", "claude-code", s.session_id),
-        tags=["claude-code", f"account:{account}"],
+        tags=tags,
         meta={
             "platform": "claude-code",
             "account": account,
             "session_id": s.session_id,
+            "parent_session": parent_session,
             "cwd": s.cwd,
             "git_branch": s.git_branch,
             "claude_code_version": s.version,

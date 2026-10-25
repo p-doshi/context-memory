@@ -19,8 +19,12 @@ One store (SQLite + LanceDB) for every source and account:
 | Claude web + desktop | logged-in browser sync, or the official export via an inbox folder |
 | Perplexity | logged-in browser sync (threads + Spaces) |
 
-- `memory_write` / `memory_search` with provenance (design §7.2), results marked
-  `unverified` (the verification service is Week 3)
+- `memory_search` (compact hits, ~1.5k tokens) / `memory_get` / `memory_write`, with
+  provenance (design §7.2); results from local files are checked against the file at
+  query time (`verified` / `stale` / `missing`), chats stay `unverified`
+- Automatic session preamble on every configured machine (SessionStart context pack
+  plus `CLAUDE.md` guidance); remote machines via SSH tunnels to the hub
+- Daily verified local snapshots (7 kept) under `<home>/backup`
 - Retrieval modes `vector`, `bm25` (SQLite FTS5) and `hybrid` (reciprocal rank fusion)
 - Temporal knowledge graph: projects, documents, accounts, modules, classes, methods,
   imports, file mentions; each edge cites its evidence chunk and expires with it

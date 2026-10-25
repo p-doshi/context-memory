@@ -173,13 +173,13 @@ def process_remote_inbox(svc, home: Path, project_map: dict[str, str]) -> dict:
     state_file = home / "run" / "remote-inbox.json"
     state = json.loads(state_file.read_text()) if state_file.exists() else {}
     results: list[dict] = []
-    for path in sorted(root.glob("*/*/*.jsonl")):
+    for path in sorted(list(root.glob("*/*/*.jsonl")) + list(root.glob("*/*/*/subagents/*.jsonl"))):
         key, mtime = str(path), path.stat().st_mtime
         if state.get(key) == mtime:
             continue
         meta_file = path.with_suffix(".meta.json")
         meta = json.loads(meta_file.read_text()) if meta_file.exists() else {}
-        account = meta.get("account") or path.parent.parent.name
+        account = meta.get("account") or path.relative_to(root).parts[0]
         try:
             r = ingest_session(svc, path, account, project_map, actor="daemon")
             results.append(r)

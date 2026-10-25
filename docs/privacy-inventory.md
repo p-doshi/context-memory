@@ -10,6 +10,7 @@ dev laptop. Re-check after dependency upgrades (`uv lock` changes).
 | SQLite metadata, chunk text, graph, audit log | `<home>/data/metadata.sqlite3` | No |
 | LanceDB vectors | `<home>/data/lance/` | No |
 | Raw uploads from other machines | `<home>/inbox/remote/<device>/` | No |
+| Daily snapshots of all of the above (7 kept) | `<home>/backup/snapshot-*/` | No; browser profiles and device tokens are excluded |
 | Browser profiles (session cookies) | `<home>/browser/<account>/` | See Google, below |
 | Device tokens | SHA-256 only, in SQLite | No |
 | API keys | OS keychain (`cmh secret set`) | No |

@@ -160,7 +160,10 @@ def build_app(settings: Settings, embedder: Embedder, service: MemoryService | N
         # Store and return at once; the daemon indexes it on its next pass.
         # Ingesting here (minutes for a long session, under the hub lock) froze
         # auth, health and search for every other client (observed).
-        dest = inbox / dev["name"] / project_dir / f"{session_id}.jsonl"
+        parent = _SAFE.sub("-", request.headers.get("x-parent-session", ""))[:80]
+        # Subagent transcripts keep the local layout so the daemon recognises them.
+        dest = (inbox / dev["name"] / project_dir / parent / "subagents" / f"{session_id}.jsonl"
+                if parent else inbox / dev["name"] / project_dir / f"{session_id}.jsonl")
         dest.parent.mkdir(parents=True, exist_ok=True)
         tmp = dest.with_suffix(".part")
         tmp.write_bytes(body)

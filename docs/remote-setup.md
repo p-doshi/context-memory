@@ -143,6 +143,5 @@ If the hub is unreachable the hook prints nothing and the session starts normall
 
 ## Known gaps
 
-- Subagent transcripts are not pushed yet.
 - Claude Code deletes local transcripts after `cleanupPeriodDays` (default 30).
 - If the hub is off, sessions elsewhere run without memory; uploads wait in the queue.

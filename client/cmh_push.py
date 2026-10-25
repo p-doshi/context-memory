@@ -99,7 +99,8 @@ def sweep(cfg):
     if not root.is_dir():
         return 0
     sent, now, n = sent_state(), time.time(), 0
-    for p in root.glob("*/*.jsonl"):
+    # Sessions and their subagent transcripts (<session>/subagents/agent-*.jsonl).
+    for p in list(root.glob("*/*.jsonl")) + list(root.glob("*/*/subagents/*.jsonl")):
         st = p.stat()
         if now - st.st_mtime < IDLE_SECONDS:
             continue
@@ -120,7 +121,10 @@ def upload(cfg, tok, item):
     req.add_header("Content-Encoding", "gzip")
     req.add_header("Content-Type", "application/x-ndjson")
     req.add_header("X-Session-Id", item["session_id"])
-    req.add_header("X-Project-Dir", p.parent.name)
+    subagent = p.parent.name == "subagents"
+    req.add_header("X-Project-Dir", p.parents[2].name if subagent else p.parent.name)
+    if subagent:
+        req.add_header("X-Parent-Session", p.parents[1].name)
     if cfg.get("account"):
         req.add_header("X-Account", cfg["account"])
     with urllib.request.urlopen(req, timeout=120) as resp:
