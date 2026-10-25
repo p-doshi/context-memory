@@ -155,6 +155,77 @@ def build_app(settings: Settings, embedder: Embedder, service: MemoryService | N
     mcp = build_mcp(lambda: svc, allow_local_ingest=False, actor="hub", lock=lock,
                     authorize=authorize)
 
+    # -- owner console: static files (no data, no token) + admin-scope data API --
+    from starlette.responses import FileResponse, Response
+
+    from context_memory.server import console_api
+
+    console_dir = Path(__file__).resolve().parents[2] / "web" / "console"
+    console_files = {"index.html": "text/html", "app.js": "text/javascript",
+                     "style.css": "text/css", "vendor/cytoscape.min.js": "text/javascript"}
+    security_headers = {
+        # Nothing outside this origin may load; no framing; no referrer leaks.
+        "Content-Security-Policy": "default-src 'self'; img-src 'self' data:; "
+                                   "style-src 'self' 'unsafe-inline'; frame-ancestors 'none'",
+        "X-Frame-Options": "DENY", "Referrer-Policy": "no-referrer",
+        "X-Content-Type-Options": "nosniff",
+    }
+
+    @mcp.custom_route("/console", methods=["GET"])
+    async def console_index(request: Request):
+        return FileResponse(console_dir / "index.html", media_type="text/html",
+                            headers=security_headers)
+
+    @mcp.custom_route("/console/{path:path}", methods=["GET"])
+    async def console_static(request: Request):
+        name = request.path_params.get("path") or "index.html"
+        if name not in console_files or not (console_dir / name).is_file():
+            return Response("not found", status_code=404)
+        return FileResponse(console_dir / name, media_type=console_files[name],
+                            headers=security_headers)
+
+    def _json(data):
+        return JSONResponse(data, headers={**security_headers, "Cache-Control": "no-store"})
+
+    @mcp.custom_route("/v1/console/overview", methods=["GET"])
+    async def console_overview(request: Request):
+        with lock:
+            return _json(console_api.overview(svc, settings.data_dir.parent))
+
+    @mcp.custom_route("/v1/console/graph/projects", methods=["GET"])
+    async def console_project_graph(request: Request):
+        with lock:
+            return _json(console_api.project_graph(svc))
+
+    @mcp.custom_route("/v1/console/graph/entity", methods=["GET"])
+    async def console_entity_graph(request: Request):
+        name = request.query_params.get("name", "")[:300]
+        try:
+            depth = max(1, min(int(request.query_params.get("depth", 1)), 2))
+        except ValueError:
+            depth = 1
+        with lock:
+            return _json(console_api.entity_graph(svc, name, depth))
+
+    @mcp.custom_route("/v1/console/search", methods=["GET"])
+    async def console_search(request: Request):
+        q = request.query_params.get("q", "")[:500]
+        mode = request.query_params.get("mode") or None
+        with lock:
+            try:
+                return _json(svc.memory_search(q, k=10, mode=mode, recipient="owner", actor="console"))
+            except ValueError as e:
+                return JSONResponse({"error": str(e)}, status_code=400)
+
+    @mcp.custom_route("/v1/console/audit", methods=["GET"])
+    async def console_audit(request: Request):
+        try:
+            n = int(request.query_params.get("n", 200))
+        except ValueError:
+            n = 200
+        with lock:
+            return _json(console_api.audit(svc, n))
+
     @mcp.custom_route("/v1/health", methods=["GET"])
     async def health(request: Request):
         dev = current_device.get()
@@ -208,9 +279,11 @@ def build_app(settings: Settings, embedder: Embedder, service: MemoryService | N
 
     class BearerAuth(BaseHTTPMiddleware):
         async def dispatch(self, request, call_next):
+            path = request.url.path
+            if path == "/console" or path.startswith("/console/"):
+                return await call_next(request)  # static page from an allowlist; holds no data
             header = request.headers.get("authorization", "")
             token = header[7:].strip() if header.lower().startswith("bearer ") else ""
-            path = request.url.path
             with lock:
                 dev = lookup_device(svc.sqlite, token) if token else None
                 if dev is None:

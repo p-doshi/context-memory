@@ -100,6 +100,7 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("hub", help="run only the hub (HTTP MCP + session upload), no indexing")
     sub.add_parser("security-check", help="report on the security posture of this install")
+    sub.add_parser("console", help="open the owner web console in the browser")
 
     sub.add_parser("accounts", help="list accounts from sources.toml (no secrets)")
     s = sub.add_parser("secret", help="manage API keys in the OS keychain")
@@ -174,6 +175,18 @@ def main(argv: list[str] | None = None) -> int:
                 print("revoked" if hub.revoke_device(db, args.name) else "no active device by that name")
         finally:
             db.close()
+        return 0
+    if args.cmd == "console":
+        import webbrowser
+        from context_memory.memory.sqlite_store import SQLiteStore
+        from context_memory.server import hub
+        db = SQLiteStore(settings.sqlite_path)
+        # Fresh admin-only token on every open; the previous one stops working.
+        token = hub.add_device(db, "owner-console", None, rotate=True, scopes="admin")
+        db.close()
+        # The token rides in the URL fragment, which browsers never send to the server.
+        webbrowser.open(f"http://127.0.0.1:{settings.hub_port}/console/#t={token}")
+        print("console opened in your browser (token kept in that tab only)")
         return 0
     if args.cmd == "security-check":
         from context_memory import security_check

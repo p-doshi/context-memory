@@ -202,3 +202,26 @@ def test_denied_auth_audit_is_throttled(client, svc):
         client.get("/v1/health", headers={"Authorization": "Bearer wrong"})
     denials = [r for r in svc.sqlite.audit_tail(50) if r["action"] == "auth" and r["outcome"] == "denied"]
     assert len(denials) == 1
+
+
+def test_console_static_and_admin_api(client, svc):
+    r = client.get("/console")
+    assert r.status_code == 200 and "Memory console" in r.text
+    assert "default-src 'self'" in r.headers["content-security-policy"]
+    assert client.get("/console/app.js").status_code == 200
+    for bad in ("/console/../pyproject.toml", "/console/secret.txt", "/console/vendor/../../app.js"):
+        assert client.get(bad).status_code in (404, 401)
+    full = hub.add_device(svc.sqlite, "laptop", None)                       # default scopes, no admin
+    admin = hub.add_device(svc.sqlite, "owner-console", None, scopes="admin")
+    assert client.get("/v1/console/overview", headers={"Authorization": f"Bearer {full}"}).status_code == 403
+    svc.memory_write(text="graph seed note", kind="note", project="p1")
+    ok = client.get("/v1/console/overview", headers={"Authorization": f"Bearer {admin}"})
+    assert ok.status_code == 200 and ok.headers["cache-control"] == "no-store"
+    assert ok.json()["stats"]["documents"] == 1 and ok.json()["audit_chain"]["ok"]
+    g = client.get("/v1/console/graph/projects", headers={"Authorization": f"Bearer {admin}"}).json()
+    assert any(n["id"] == "p:p1" for n in g["nodes"])
+    e = client.get("/v1/console/graph/entity", params={"name": "p1", "depth": "x"},
+                   headers={"Authorization": f"Bearer {admin}"})
+    assert e.status_code == 200
+    s = client.get("/v1/console/search", params={"q": "graph seed"}, headers={"Authorization": f"Bearer {admin}"})
+    assert s.json()["results"]
