@@ -71,7 +71,13 @@ def run(settings: Settings, svc=None) -> list[dict]:
         present = "Block context-memory hub inbound" in rule
         add("firewall rule for hub port", "PASS" if present else "WARN",
             "inbound block rule present" if present
-            else "no explicit inbound block rule (defence in depth; needs admin to add)")
+            else "no explicit inbound block rule (run scripts/harden-host.ps1 as admin)")
+        out_rule = _run(["netsh", "advfirewall", "firewall", "show", "rule",
+                         "name=Block context-memory interpreter outbound"])
+        present = "Block context-memory interpreter outbound" in out_rule
+        add("firewall egress block for interpreter", "PASS" if present else "WARN",
+            "non-loopback connections from the harness interpreter are blocked" if present
+            else "interpreter may reach the network (run scripts/harden-host.ps1 as admin)")
         enc = _ps("(Get-CimInstance -Namespace root/CIMv2/Security/MicrosoftVolumeEncryption "
                   "-ClassName Win32_EncryptableVolume -Filter \"DriveLetter='C:'\" "
                   "-ErrorAction SilentlyContinue).ProtectionStatus")

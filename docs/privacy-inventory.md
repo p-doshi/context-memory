@@ -1,6 +1,6 @@
 # Data-flow and third-party inventory
 
-Last checked: 2026-10-24, by code inspection and live network measurement on the
+Last checked: 2026-10-25, by code inspection and live network measurement on the
 dev laptop. Re-check after dependency upgrades (`uv lock` changes).
 
 ## Where the memory lives
