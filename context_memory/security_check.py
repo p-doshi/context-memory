@@ -92,6 +92,12 @@ def run(settings: Settings, svc=None) -> list[dict]:
             add("ssh server", "PASS" if ok else ("UNKNOWN" if not cfg else "FAIL"),
                 "key-only, one link account" if ok else
                 ("cannot read sshd_config" if not cfg else "sshd runs without the link restrictions"))
+            # A VPN adapter can be "Private" too; the rule must name the LAN adapter.
+            alias = _ps("(Get-NetFirewallRule -DisplayName 'Allow context-memory SSH link (LAN)' "
+                        "-ErrorAction SilentlyContinue | Get-NetFirewallInterfaceFilter).InterfaceAlias").strip()
+            add("ssh firewall scope", "PASS" if alias and alias.lower() != "any" else "WARN",
+                f"allowed on adapter '{alias}' only" if alias and alias.lower() != "any"
+                else "SSH allowed on every Private adapter, VPN included (rerun enable-ssh-link.ps1)")
         enc = _ps("(Get-CimInstance -Namespace root/CIMv2/Security/MicrosoftVolumeEncryption "
                   "-ClassName Win32_EncryptableVolume -Filter \"DriveLetter='C:'\" "
                   "-ErrorAction SilentlyContinue).ProtectionStatus")

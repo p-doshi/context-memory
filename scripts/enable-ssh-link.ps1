@@ -18,8 +18,10 @@
     no terminal, and any command exits at once. Its single authorized key is
     the -PublicKey given here.
   - Firewall: the feature's own allow-all rule is disabled; SSH is allowed only
-    on Private networks and only from the local subnet. Mark your home Wi-Fi as
-    Private (Settings > Network & internet > Wi-Fi > <network> > Private).
+    on the -LanInterface adapter (default Wi-Fi), on Private networks, and only
+    from its local subnet. VPN adapters are excluded even when Windows marks
+    them Private (a university VPN subnet is not your LAN). Mark your home
+    Wi-Fi as Private (Settings > Network & internet > Wi-Fi > <network> > Private).
   The other machine then runs client/hub-link.sh with the host key fingerprint
   printed at the end.
 #>
@@ -27,7 +29,8 @@ param(
     [string]$PublicKey,
     [switch]$Remove,
     [string]$LinkUser = "cmhlink",
-    [int]$HubPort = 8765
+    [int]$HubPort = 8765,
+    [string]$LanInterface = "Wi-Fi"
 )
 $ErrorActionPreference = "Stop"
 $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
@@ -102,11 +105,12 @@ if ($LASTEXITCODE -ne 0) {
     throw "sshd rejected the new config; original restored"
 }
 
-# 5. Firewall: LAN only, Private profile only.
+# 5. Firewall: the LAN adapter only (never a VPN adapter), Private profile, local subnet.
 Get-NetFirewallRule -Name "OpenSSH-Server-In-TCP" -ErrorAction SilentlyContinue | Disable-NetFirewallRule
 Get-NetFirewallRule -DisplayName $RuleName -ErrorAction SilentlyContinue | Remove-NetFirewallRule
 New-NetFirewallRule -DisplayName $RuleName -Direction Inbound -Protocol TCP -LocalPort 22 `
-    -Program $sshd -RemoteAddress LocalSubnet -Profile Private -Action Allow | Out-Null
+    -Program $sshd -RemoteAddress LocalSubnet -Profile Private -InterfaceAlias $LanInterface `
+    -Action Allow | Out-Null
 
 Set-Service sshd -StartupType Automatic
 Start-Service sshd
