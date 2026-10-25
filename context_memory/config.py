@@ -67,6 +67,24 @@ class Settings(BaseSettings):
     # e.g. ["server5.example.org"]. JSON list in CMH_HUB_TUNNELS.
     hub_tunnels: list[str] = Field(default_factory=list)
 
+    # Public node (server/public_node.py): visitor site from the exported public
+    # store, on loopback; cloudflared carries outside traffic to it.
+    public_enabled: bool = False
+    public_port: int = 8787
+    public_export_interval_seconds: int = 6 * 3600
+    # Origins (e.g. the Vercel site) allowed to call the public API from browsers.
+    public_allowed_origins: list[str] = Field(default_factory=list)
+    # Local answer model: llama.cpp llama-server on loopback. Empty URL = excerpts only.
+    public_llm_url: str = "http://127.0.0.1:8090"
+    llm_server_exe: Path | None = None
+    llm_model_path: Path | None = None
+    llm_gpu_layers: int = 99
+    # 3072 leaves GPU headroom for the embedder on a 6 GB card; prompts stay under ~1.5k tokens.
+    llm_context_tokens: int = 3072
+    # cloudflared binary and its config (named tunnel -> 127.0.0.1:public_port).
+    cloudflared_exe: Path | None = None
+    cloudflared_config: Path | None = None
+
     # Daemon: TOML file listing what to index (see config/sources.example.toml).
     sources_file: Path | None = None
     daemon_interval_seconds: int = 300

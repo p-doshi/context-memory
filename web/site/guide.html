@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Replicate the Harness</title>
+<meta name="description" content="Run your own Context Memory Harness in about six commands, without writing code.">
+<link rel="alternate" type="text/markdown" href="/guide.md">
+<link rel="describedby" href="/llms.txt">
+<link rel="stylesheet" href="/site.css">
+</head>
+<body>
+<header class="wrap">
+  <p class="eyebrow"><a href="/">Context Memory Harness</a></p>
+  <h1>Replicate it</h1>
+  <p class="lede">Six commands give you your own memory of your Claude Code sessions, code and notes, searchable
+    from Claude Code. No code to write; each step ends with a check you can see.</p>
+</header>
+<main class="wrap">
+  <p class="muted small">You need: Windows, macOS or Linux; about 3 GB of disk; an internet connection for the
+    install and the one-time model download. An NVIDIA GPU makes indexing faster but is not required.
+    Everything stays on your machine.</p>
+  <ol class="steps">
+    <li>
+      <h3>Install uv</h3>
+      <p>uv installs the exact Python and library versions this project was tested with.</p>
+      <p class="label">macOS / Linux</p>
+      <pre><code>curl -LsSf https://astral.sh/uv/install.sh | sh</code></pre>
+      <p class="label">Windows (PowerShell)</p>
+      <pre><code>powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"</code></pre>
+      <p class="check">Check: <code>uv --version</code> prints a version.</p>
+    </li>
+    <li>
+      <h3>Get the code and its locked dependencies</h3>
+      <pre><code>git clone https://github.com/p-doshi/context-memory
+cd context-memory
+uv sync --locked --extra embed</code></pre>
+      <p class="check">Check: <code>uv run cmh --help</code> lists the commands.</p>
+    </li>
+    <li>
+      <h3>Tell it what to remember</h3>
+      <p>Point it at a code repository and a folder of notes (either is optional). It finds your Claude Code
+        sessions by itself and fetches the embedding model once.</p>
+      <pre><code>uv run cmh init --code ~/projects/my-repo --docs ~/notes --download-model</code></pre>
+      <p class="check">Check: it prints the config file it wrote and "embedding model ready".</p>
+    </li>
+    <li>
+      <h3>Build the memory</h3>
+      <pre><code>uv run cmh daemon --once</code></pre>
+      <p class="check">Check: <code>uv run cmh stats</code> shows documents and chunks.</p>
+    </li>
+    <li>
+      <h3>Search it</h3>
+      <pre><code>uv run cmh search "how did I set up the training loop" --mode hybrid</code></pre>
+      <p class="check">Check: results with their source file or session and a verified / stale / unverified label.</p>
+    </li>
+    <li>
+      <h3>Connect Claude Code</h3>
+      <pre><code>claude mcp add context-memory -- uv run --directory "$(pwd)" cmh serve</code></pre>
+      <p class="check">Check: in Claude Code, <code>/mcp</code> lists context-memory; ask it to "search my memory for …".</p>
+    </li>
+    <li>
+      <h3>Optional: keep it running and use it from other machines</h3>
+      <p>An always-on daemon re-indexes every few minutes, and a hub lets Claude Code on servers and other laptops
+        search it over SSH, with a short memory summary at the start of every session.
+        On Windows: <code>powershell -ExecutionPolicy Bypass -File scripts\install-daemon.ps1</code>.
+        Elsewhere, run <code>uv run cmh daemon</code> under your own process manager (no service file is provided yet).
+        Remote machines: see <a id="remote-doc" href="#">docs/remote-setup.md</a>.</p>
+    </li>
+  </ol>
+  <p class="muted small">Something did not work? Ask about it on the <a href="/#ask">project page</a>, or open an issue
+    in the repository.</p>
+</main>
+<footer class="wrap muted small"><p>This guide is also available as <a href="/guide.md">Markdown</a> for agents.</p></footer>
+<script src="/guide.js"></script>
+</body>
+</html>

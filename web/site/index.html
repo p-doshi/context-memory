@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Context Memory Harness</title>
+<meta name="description" content="A local memory shared by AI assistants, with sources attached. See the pipeline, try it, and replicate it.">
+<link rel="alternate" type="text/markdown" href="/index.md">
+<link rel="describedby" href="/llms.txt">
+<link rel="stylesheet" href="/site.css">
+</head>
+<body>
+<header class="wrap">
+  <p class="eyebrow">Open-source research software · MIT</p>
+  <h1>Context Memory Harness</h1>
+  <p class="lede" id="summary">A local memory shared by AI assistants.</p>
+  <nav class="cta">
+    <a class="btn primary" href="/guide">Replicate it</a>
+    <a class="btn" href="#ask">Ask the project</a>
+    <a class="btn ghost" id="repo" href="#">Source code</a>
+  </nav>
+</header>
+
+<main class="wrap">
+  <section aria-labelledby="pipe-h">
+    <h2 id="pipe-h">The pipeline</h2>
+    <p class="muted">Everything runs on one laptop. Select a stage to see what it does and where it lives in the code.
+      Live counts come from the public part of the memory.</p>
+    <ol class="pipeline" id="pipeline"></ol>
+    <article class="detail" id="detail" aria-live="polite"></article>
+  </section>
+
+  <section aria-labelledby="gate-h">
+    <h2 id="gate-h">Try the Disclosure Gate</h2>
+    <p class="muted">Type a sentence with, say, an e-mail address or a street address. Nothing you type is stored.</p>
+    <form id="gate-form" class="row">
+      <input id="gate-text" maxlength="600" autocomplete="off"
+             value="Send the results to jane.doe@example.org before Friday.">
+      <button class="btn primary" type="submit">Run the gate</button>
+    </form>
+    <div class="gate-out" id="gate-out"></div>
+  </section>
+
+  <section aria-labelledby="ask-h" id="ask">
+    <h2 id="ask-h">Ask the project</h2>
+    <p class="muted" id="ask-note">Answers are written from excerpts of the project's public memory, with the sources shown.</p>
+    <div id="log" class="log"></div>
+    <form id="ask-form" class="row">
+      <input id="question" maxlength="500" autocomplete="off"
+             placeholder="e.g. How does the memory keep private data out of answers?">
+      <button class="btn primary" type="submit">Ask</button>
+    </form>
+  </section>
+</main>
+
+<footer class="wrap muted small">
+  <p>Agents and scripts: this page is available as <a href="/index.md">Markdown</a>, the stages as
+    <a href="/pipeline.json">JSON</a>, and an index at <a href="/llms.txt">/llms.txt</a>.
+    Only material the owner made public is searched; personal details are withheld automatically.</p>
+</footer>
+<script src="/site.js"></script>
+</body>
+</html>

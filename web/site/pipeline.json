@@ -1,0 +1,82 @@
+{
+  "name": "Context Memory Harness",
+  "summary": "A local memory shared by AI assistants: every coding session, chat, codebase and document goes into one store on the owner's laptop, and assistants on any machine retrieve from it with sources attached.",
+  "repository": "https://github.com/p-doshi/context-memory",
+  "license": "MIT",
+  "stages": [
+    {
+      "id": "sources",
+      "title": "Sources",
+      "what": "Claude Code sessions from every machine (pushed by a session hook over SSH), claude.ai and Perplexity conversations (read back through a logged-in local browser), codebases (git-tracked files) and Markdown documentation.",
+      "where": ["context_memory/ingestion/", "context_memory/browser/", "client/cmh_push.py"],
+      "stat": "documents"
+    },
+    {
+      "id": "ingress",
+      "title": "Ingress checks",
+      "what": "A secret scanner rejects documents that contain credentials (chat logs are redacted instead), and only folders the owner listed can be read.",
+      "where": ["context_memory/ingestion/sensitive_scanner.py", "context_memory/ingestion/markdown.py"]
+    },
+    {
+      "id": "chunking",
+      "title": "Chunking",
+      "what": "Markdown is split at headings; Python at classes and methods, keeping line ranges so every chunk points back to exact lines; other text in token-bounded blocks.",
+      "where": ["context_memory/memory/chunker.py", "context_memory/ingestion/code.py"],
+      "stat": "chunks"
+    },
+    {
+      "id": "embedding",
+      "title": "Embedding",
+      "what": "Qwen3-Embedding-0.6B at a pinned revision, float32 on a 6 GB consumer GPU (GTX 1660 Ti), fully offline after the first download. float16 measured slower on this card.",
+      "where": ["context_memory/memory/embedder.py", "docs/benchmarks/embedding-results.md"],
+      "stat": "vectors"
+    },
+    {
+      "id": "storage",
+      "title": "Storage",
+      "what": "SQLite holds metadata, provenance, a full-text index and a hash-chained audit log; LanceDB holds the vectors. A changed source retires old chunks instead of deleting them, so history survives.",
+      "where": ["context_memory/memory/sqlite_store.py", "context_memory/memory/lance_store.py"]
+    },
+    {
+      "id": "graph",
+      "title": "Knowledge graph",
+      "what": "Projects, documents, modules, classes, methods and imports, extracted from the stored chunks. Every edge cites the chunk it came from and expires when that chunk is retired.",
+      "where": ["context_memory/memory/graph.py"],
+      "stat": "graph"
+    },
+    {
+      "id": "retrieval",
+      "title": "Retrieval",
+      "what": "Vector search, BM25 full-text search, or both fused by reciprocal rank fusion (k = 60). On the owner's corpus (about 12,000 chunks, 30 queries) hybrid found the right document in the top 5 for 0.90 of queries [95% CI 0.80 to 0.98] against 0.75 [0.58 to 0.90] for vector alone; warm hybrid search takes about 150 ms locally.",
+      "where": ["context_memory/memory/service.py", "docs/benchmarks/retrieval-results.md", "docs/benchmarks/search-latency-results.md"],
+      "citation": {"text": "Gordon V. Cormack, Charles L A Clarke, Stefan Buettcher (2009). Reciprocal rank fusion outperforms condorcet and individual rank learning methods. Proceedings of the 32nd international ACM SIGIR conference on Research and development in information retrieval", "doi": "10.1145/1571941.1572114"}
+    },
+    {
+      "id": "verification",
+      "title": "Verification",
+      "what": "Results that come from local files are re-checked against the file at query time and labelled verified, stale or missing; chat excerpts stay unverified.",
+      "where": ["context_memory/verification/source.py"]
+    },
+    {
+      "id": "disclosure",
+      "title": "Disclosure Gate",
+      "what": "Before anything leaves the memory, a deterministic gate withholds attribute types (contact details, precise location, financial and credential data) according to who receives it: the owner, a local model, a cloud model, or the public.",
+      "where": ["context_memory/policy/disclosure.py", "docs/design-v0.3-contextual-integrity.md"],
+      "demo": "/api/gate"
+    },
+    {
+      "id": "delivery",
+      "title": "Delivery",
+      "what": "Claude Code on any machine receives a short context pack when a session starts and can search the memory over MCP; remote machines reach it only through SSH. The owner has a private console; visitors get this site, served from an exported public copy.",
+      "where": ["context_memory/server/hub.py", "context_memory/server/public_node.py", "client/"]
+    }
+  ],
+  "endpoints": {
+    "agent": {"method": "POST", "path": "/api/agent", "protocol": "AG-UI (server-sent events)", "spec": "https://docs.ag-ui.com"},
+    "search": {"method": "GET", "path": "/api/search?q=...", "returns": "JSON excerpts with sources"},
+    "projects": {"method": "GET", "path": "/api/projects"},
+    "graph": {"method": "GET", "path": "/api/graph", "returns": "module import graph"},
+    "stats": {"method": "GET", "path": "/api/stats"},
+    "gate": {"method": "POST", "path": "/api/gate", "body": {"text": "..."}, "returns": "what each recipient class would receive"}
+  }
+}

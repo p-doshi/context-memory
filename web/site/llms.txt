@@ -1,0 +1,22 @@
+# Context Memory Harness
+
+> A local memory shared by AI assistants, with sources attached: Claude Code sessions, chats, code and documents in one store on the owner's laptop, retrieved over MCP from any machine through SSH. Open source (MIT).
+
+This site serves Markdown to agents at the same URLs as the human pages. The live memory endpoints answer only from the public part of the project.
+
+## Docs
+
+- [Project overview](/index.md): pipeline stages, measured performance, endpoints
+- [Replication guide](/guide.md): six commands with a check after each
+- [Pipeline as JSON](/pipeline.json): stages, code locations, endpoints
+
+## API
+
+- [AG-UI agent](/api/agent): POST RunAgentInput, server-sent events; answers cite retrieved excerpts
+- [Search](/api/search?q=disclosure%20gate): GET, JSON excerpts with sources and verification status
+- [Stats](/api/stats): GET, live counts of the public memory
+
+## Optional
+
+- [Source repository](https://github.com/p-doshi/context-memory)
+- [AG-UI protocol](https://docs.ag-ui.com)

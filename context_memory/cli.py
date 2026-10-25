@@ -107,6 +107,23 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("security-check", help="report on the security posture of this install")
     sub.add_parser("console", help="open the owner web console in the browser")
     sub.add_parser("visitor", help="preview the public visitor page (only [public] projects)")
+    s = sub.add_parser("public", help="the public node: export the public subset, set up, serve")
+    s.add_argument("action", choices=["export", "setup", "serve", "vercel", "moderation", "model-off",
+                                      "model-on", "guard-config"],
+                   help="export: copy [public] projects to <home>/public; setup: create the node's "
+                        "embed-only token and the model-server key (keychain); serve: run the node; "
+                        "vercel: write a static deploy folder for the site")
+    s.add_argument("--api-host", help="vercel: host name that reaches the public node, e.g. api.example.org")
+    s.add_argument("--out", help="vercel: deploy folder (default <home>/public/vercel)")
+    s.add_argument("-n", type=int, default=30, help="moderation: entries to show")
+
+    s = sub.add_parser("init", help="write a first sources.toml (and optionally fetch the model)")
+    s.add_argument("--code", action="append", default=[], metavar="FOLDER", help="a code repository")
+    s.add_argument("--docs", action="append", default=[], metavar="FOLDER", help="a Markdown folder")
+    s.add_argument("--claude-dir", help="Claude Code config dir (default ~/.claude)")
+    s.add_argument("--download-model", action="store_true",
+                   help="fetch the pinned embedding model now (the only network step)")
+    s.add_argument("--force", action="store_true", help="replace an existing sources.toml")
 
     sub.add_parser("accounts", help="list accounts from sources.toml (no secrets)")
     s = sub.add_parser("secret", help="manage API keys in the OS keychain")
@@ -145,6 +162,79 @@ def main(argv: list[str] | None = None) -> int:
     from context_memory.config import get_settings
     settings = get_settings()
 
+    if args.cmd == "init":
+        from context_memory.setup_init import init
+        try:
+            for line in init(settings, args.code, args.docs, args.claude_dir, args.download_model, args.force):
+                print(line)
+        except ValueError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
+        print("next: uv run cmh daemon --once   (first indexing pass), then: uv run cmh search \"...\"")
+        return 0
+    if args.cmd == "public" and args.action in ("moderation", "model-off", "model-on", "guard-config"):
+        from context_memory import public_guard
+        home = settings.data_dir.parent
+        if args.action == "moderation":
+            _print(public_guard.read_log(home, args.n))
+        elif args.action == "model-off":
+            (home / "public").mkdir(parents=True, exist_ok=True)
+            (home / "public" / "llm-disabled").write_text("switched off with cmh public model-off\n")
+            print("visitor model off: answers are excerpts only until `cmh public model-on`")
+        elif args.action == "model-on":
+            (home / "public" / "llm-disabled").unlink(missing_ok=True)
+            print("visitor model on")
+        else:
+            cfg = home / "config" / "public_guard.toml"
+            if cfg.exists():
+                print(f"{cfg} exists; edit it directly (it is reloaded on save)")
+            else:
+                cfg.write_text(public_guard.EXAMPLE_CONFIG, encoding="utf-8")
+                print(f"wrote {cfg}; edit replies, allow-list, extra rules and limits there")
+        return 0
+    if args.cmd == "public" and args.action == "vercel":
+        from context_memory.site_deploy import write_deploy
+        out = Path(args.out) if args.out else settings.data_dir.parent / "public" / "vercel"
+        try:
+            files = write_deploy(out, args.api_host or "")
+        except ValueError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
+        print(f"deploy folder: {out} ({len(files)} files). Deploy it as a static Vercel project, then add")
+        print("its https origin to CMH_PUBLIC_ALLOWED_ORIGINS so browsers may call the API.")
+        return 0
+    if args.cmd == "public" and args.action in ("setup", "serve"):
+        import secrets as _secrets
+        from context_memory.secrets import broker
+        if args.action == "setup":
+            from context_memory.memory.sqlite_store import SQLiteStore
+            from context_memory.server import hub
+            db = SQLiteStore(settings.sqlite_path)
+            try:
+                broker.set_secret("public-node-embed",
+                                  hub.add_device(db, "public-node", None, rotate=True, scopes="embed"))
+            finally:
+                db.close()
+            if not broker.get_secret("llm-server-key"):
+                broker.set_secret("llm-server-key", _secrets.token_urlsafe(32))
+            print("public node: embed-only device token and model-server key stored in the keychain")
+            return 0
+        from context_memory.server.public_node import serve as public_serve
+        public_serve(settings, port=settings.public_port)
+        return 0
+    if args.cmd == "public":  # export
+        from context_memory.public_export import export_public, open_stores
+        from context_memory.sources import load_sources
+        stores = open_stores(settings)
+        try:
+            _print(export_public(stores, load_sources(settings.resolved_sources_file),
+                                 settings.data_dir.parent / "public"))
+        except ValueError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
+        finally:
+            stores.sqlite.close()
+        return 0
     if args.cmd == "accounts":
         from context_memory.secrets import broker
         from context_memory.sources import load_sources

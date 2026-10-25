@@ -115,7 +115,24 @@ def run_pass(svc, settings: Settings) -> dict:
         except Exception as e:
             log.exception("backup failed")
             summary["backup"] = {"failed": repr(e)[:200]}
+    if settings.public_enabled and sources.public_projects:
+        summary.update(public_export_due(svc, settings, sources))
     return summary
+
+
+def public_export_due(svc, settings: Settings, sources) -> dict:
+    """Refresh the public node's store every public_export_interval_seconds."""
+    from context_memory.public_export import current_store, export_public
+    root = settings.data_dir.parent / "public"
+    store = current_store(root)
+    if store and time.time() - store.stat().st_mtime < settings.public_export_interval_seconds:
+        return {}
+    try:
+        out = export_public(svc, sources, root, actor="daemon")
+        return {"public_export": {k: out[k] for k in ("documents", "chunks", "vectors")}}
+    except Exception as e:
+        log.exception("public export failed")
+        return {"public_export": {"failed": repr(e)[:200]}}
 
 
 def browser_syncs(svc, settings: Settings, sources) -> dict:
@@ -283,6 +300,11 @@ def main(settings: Settings | None = None, once: bool = False) -> int:
                           settings.hub_host, settings.hub_port)
             tunnel_stop = threading.Event()
             tunnels = tunnel_mod.start(settings.hub_tunnels, settings.hub_port, tunnel_stop)
+        # Public node, answer model, Cloudflare tunnel (only with CMH_PUBLIC_ENABLED).
+        from context_memory.secrets import broker
+        from context_memory.server import children as children_mod
+        child_stop = threading.Event()
+        children = [] if once else children_mod.start(settings, child_stop, broker.get_secret)
         heartbeat = home / "run" / "heartbeat.json"
         while not stop["flag"]:
             t0 = time.time()
@@ -300,6 +322,7 @@ def main(settings: Settings | None = None, once: bool = False) -> int:
                 "stats": svc.sqlite.stats(), "vectors": svc.lance.count(),
                 "gpu": gpu_status(),
                 "tunnels": {t.host: {"state": t.state, "since": t.since} for t in tunnels},
+                "children": {c.label: {"state": c.state, "since": c.since} for c in children},
             }, indent=2))
             if once:
                 break
@@ -308,6 +331,9 @@ def main(settings: Settings | None = None, once: bool = False) -> int:
                 time.sleep(1)
         if tunnels:
             tunnel_stop.set()
+        child_stop.set()
+        for c in children:
+            c.join(15)
         svc.close()
         log.info("daemon stopped")
     return 0

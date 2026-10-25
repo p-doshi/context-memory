@@ -50,12 +50,13 @@ def _hash(token: str) -> str:
 
 # -- device registry -------------------------------------------------------
 
-SCOPES = {"read", "write", "upload", "context", "public"}
+SCOPES = {"read", "write", "upload", "context", "public", "embed"}
 DEFAULT_SCOPES = "read,write,upload,context"
 
 # Route prefix -> scope a device needs. /v1/health only needs a valid token.
+# "embed" (the public node) gets query vectors only, never memory content.
 ROUTE_SCOPES = [("/mcp", "read"), ("/v1/sessions", "upload"), ("/v1/context", "context"),
-                ("/v1/public", "public"), ("/v1/console", "admin")]
+                ("/v1/public", "public"), ("/v1/console", "admin"), ("/v1/embed", "embed")]
 
 
 def required_scope(path: str) -> str | None:
@@ -401,6 +402,16 @@ def build_app(settings: Settings, embedder: Embedder, service: MemoryService | N
                 return JSONResponse({"error": "unknown or expired code"}, status_code=403)
         name, token = got
         return JSONResponse({"device": name, "token": token}, headers={"Cache-Control": "no-store"})
+
+    @mcp.custom_route("/v1/embed", methods=["POST"])
+    async def embed(request: Request):
+        """Query embedding for the public node, which holds no model of its own."""
+        try:
+            text = str(json.loads((await request.body())[:8000] or b"{}").get("text", ""))[:2000]
+        except (ValueError, AttributeError):
+            return JSONResponse({"error": "body must be JSON {\"text\": ...}"}, status_code=400)
+        vec = svc.embedder.embed_query(text)
+        return JSONResponse({"model": svc.embedder.model_name, "dim": len(vec), "vector": vec})
 
     @mcp.custom_route("/v1/health", methods=["GET"])
     async def health(request: Request):

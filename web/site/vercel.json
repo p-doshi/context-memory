@@ -1,0 +1,88 @@
+{
+  "cleanUrls": true,
+  "rewrites": [
+    {
+      "source": "/",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": {
+            "re": "[Bb]ot|[Cc]rawl|[Ss]pider|curl|[Ww]get|[Pp]ython|httpx|aiohttp|node-fetch|undici|axios|Go-http|okhttp|[Cc]laude|[Aa]nthropic|OpenAI|GPT|[Pp]erplexity|Gemini|[Cc]ohere|[Mm]istral|[Aa]gent|MCP"
+          }
+        }
+      ],
+      "destination": "/index.md"
+    },
+    {
+      "source": "/",
+      "missing": [
+        {
+          "type": "header",
+          "key": "accept",
+          "value": {
+            "re": "text/html"
+          }
+        }
+      ],
+      "destination": "/index.md"
+    },
+    {
+      "source": "/guide",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": {
+            "re": "[Bb]ot|[Cc]rawl|[Ss]pider|curl|[Ww]get|[Pp]ython|httpx|aiohttp|node-fetch|undici|axios|Go-http|okhttp|[Cc]laude|[Aa]nthropic|OpenAI|GPT|[Pp]erplexity|Gemini|[Cc]ohere|[Mm]istral|[Aa]gent|MCP"
+          }
+        }
+      ],
+      "destination": "/guide.md"
+    },
+    {
+      "source": "/guide",
+      "missing": [
+        {
+          "type": "header",
+          "key": "accept",
+          "value": {
+            "re": "text/html"
+          }
+        }
+      ],
+      "destination": "/guide.md"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; connect-src 'self' https://API_HOST; img-src 'self' data:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "no-referrer"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "Vary",
+          "value": "Accept, User-Agent"
+        },
+        {
+          "key": "Link",
+          "value": "</llms.txt>; rel=\"describedby\""
+        }
+      ]
+    }
+  ]
+}
