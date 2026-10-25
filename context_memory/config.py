@@ -77,6 +77,12 @@ class Settings(BaseSettings):
     vpn_route_patterns: list[str] = Field(default_factory=lambda: [
         "bigdata*", "*.cs.dal.ca", "129.173.*", "cmh-tunnel-*"])
 
+    # claude.ai custom connector (server/connector.py): read-only MCP for claude.ai
+    # chats, reachable only from Anthropic's outbound range, through its own tunnel.
+    connector_enabled: bool = False
+    connector_port: int = 8790
+    connector_allowed_cidrs: list[str] = Field(default_factory=lambda: ["160.79.104.0/21"])
+
     # Public node (server/public_node.py): visitor site from the exported public
     # store, on loopback; cloudflared carries outside traffic to it.
     public_enabled: bool = False

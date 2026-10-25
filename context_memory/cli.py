@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import getpass
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -110,6 +111,10 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("security-check", help="report on the security posture of this install")
     sub.add_parser("console", help="open the owner web console in the browser")
     sub.add_parser("visitor", help="preview the public visitor page (only [public] projects)")
+    s = sub.add_parser("connector", help="claude.ai custom connector: read-only MCP for claude.ai chats")
+    s.add_argument("action", choices=["setup", "serve", "status", "on", "off"],
+                   help="setup: new read-only token (keychain; header value copied to the clipboard, never "
+                        "printed); serve: run the gateway; status; on/off: kill switch")
     s = sub.add_parser("public", help="the public node: export the public subset, set up, serve")
     s.add_argument("action", choices=["export", "setup", "serve", "vercel", "moderation", "model-off",
                                       "model-on", "guard-config"],
@@ -186,6 +191,45 @@ def main(argv: list[str] | None = None) -> int:
             print(f"error: {e}", file=sys.stderr)
             return 2
         print("next: uv run cmh daemon --once   (first indexing pass), then: uv run cmh search \"...\"")
+        return 0
+    if args.cmd == "connector":
+        from context_memory.secrets import broker
+        home = settings.data_dir.parent
+        off = home / "config" / "connector-disabled"
+        if args.action == "serve":
+            from context_memory.server.connector import serve as connector_serve
+            connector_serve(settings, port=settings.connector_port)
+        elif args.action == "setup":
+            import subprocess
+            from context_memory.memory.sqlite_store import SQLiteStore
+            from context_memory.server import hub
+            db = SQLiteStore(settings.sqlite_path)
+            try:
+                token = hub.add_device(db, "claude-ai", None, rotate=True, scopes="read")
+            finally:
+                db.close()
+            broker.set_secret("claude-ai-connector", token)
+            copied = False
+            if os.name == "nt":  # straight to the clipboard: the token never appears on screen
+                copied = subprocess.run(["clip"], input=f"Bearer {token}".encode("utf-16-le"),
+                                        creationflags=0x08000000).returncode == 0
+            print("read-only device 'claude-ai' (re)created; token stored in the keychain")
+            print("the header value 'Bearer …' is on your clipboard" if copied else
+                  "copy it from the keychain entry 'claude-ai-connector' (prefix it with 'Bearer ')")
+            print("in claude.ai: Settings > Connectors > Add custom connector; request header name: Authorization")
+        elif args.action == "status":
+            from context_memory.server.children import tunnel_url
+            print("enabled (daemon):", settings.connector_enabled, "| switched off:", off.exists())
+            print("token in keychain:", bool(broker.get_secret("claude-ai-connector")))
+            url = tunnel_url(home, name="cloudflared-connector")
+            print("connector URL:", (url + "/mcp") if url else "none (no connector tunnel running)")
+            print("allowed sources:", settings.connector_allowed_cidrs)
+        elif args.action == "off":
+            off.write_text("switched off with cmh connector off\n")
+            print("connector refuses every request until `cmh connector on`")
+        else:
+            off.unlink(missing_ok=True)
+            print("connector on")
         return 0
     if args.cmd == "public" and args.action in ("moderation", "model-off", "model-on", "guard-config"):
         from context_memory import public_guard

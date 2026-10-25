@@ -92,10 +92,10 @@ def plan(settings, secrets_get) -> list[tuple[str, list[str], dict[str, str]]]:
 _QUICK_URL = re.compile(r"https://[a-z0-9-]+\.trycloudflare\.com")
 
 
-def tunnel_url(home: Path, since: float = 0) -> str | None:
-    """The quick tunnel's current public address: the last one cloudflared
+def tunnel_url(home: Path, since: float = 0, name: str = "cloudflared") -> str | None:
+    """A quick tunnel's current public address: the last one its cloudflared
     logged, if the log was written after `since` (the child's start time)."""
-    log_path = home / "logs" / "cloudflared.log"
+    log_path = home / "logs" / f"{name}.log"
     try:
         if log_path.stat().st_mtime < since:
             return None
@@ -112,7 +112,7 @@ def start(settings, stop: threading.Event, secrets_get) -> list[Child]:
     logs.mkdir(parents=True, exist_ok=True)
     # The VPN logs in to an external server: retry slowly (rapid sign-ins can get
     # the address blocked there; seen 2026-10-25).
-    children = [Child(name, argv, stop, logs / f"{name}.log", env, fresh_log=(name == "cloudflared"),
+    children = [Child(name, argv, stop, logs / f"{name}.log", env, fresh_log=name.startswith("cloudflared"),
                       backoff=(120, 1800) if name == "wsl-vpn" else (5, 600))
                 for name, argv, env in plan(settings, secrets_get)]
     for c in children:
