@@ -7,6 +7,7 @@ Everything here is read-only and returns owner-level views (recipient
 from __future__ import annotations
 
 import json
+import re
 import time
 from pathlib import Path
 
@@ -24,9 +25,18 @@ def overview(svc, home: Path) -> dict:
     latest = json.loads(snaps[-1].read_text()) if snaps else None
     devices = [dict(r) for r in q("SELECT name, account, scopes, last_seen, revoked_at FROM devices "
                                   "ORDER BY revoked_at IS NOT NULL, name")]
+    machines: dict[str, dict] = {}
+    for path, updated in q("SELECT path, updated_at FROM documents WHERE kind = 'chat'"):
+        m = re.search(r"/inbox/remote/([^/]+)/", path or "")
+        name = (m.group(1) if m else "claude.ai" if path.startswith("claude.ai://")
+                else "perplexity" if "perplexity" in path else "this laptop")
+        e = machines.setdefault(name, {"machine": name, "sessions": 0, "updated": None})
+        e["sessions"] += 1
+        e["updated"] = max(filter(None, (e["updated"], updated)), default=None)
     return {
         "stats": {**svc.sqlite.stats(), "vectors": svc.lance.count(), **svc.graph.stats()},
         "projects": projects,
+        "machines": sorted(machines.values(), key=lambda e: e["updated"] or "", reverse=True),
         "sources": sources,
         "devices": devices,
         "daemon": {k: heartbeat.get(k) for k in ("status", "elapsed_s", "gpu", "tunnels")}
@@ -34,6 +44,25 @@ def overview(svc, home: Path) -> dict:
                      if heartbeat.get("last_pass_end") else None},
         "backup": latest and {k: latest.get(k) for k in ("created", "ok", "chunks", "bytes", "audit_chain")},
         "audit_chain": svc.sqlite.verify_audit_chain(),
+    }
+
+
+def public_status(home: Path, n: int = 100) -> dict:
+    """The public site as the owner sees it: processes, address, export, model
+    switch, and the moderation log (flagged visitor attempts, newest first)."""
+    from context_memory.public_export import current_store
+    from context_memory.public_guard import read_log
+    hb_file = home / "run" / "heartbeat.json"
+    heartbeat = json.loads(hb_file.read_text()) if hb_file.exists() else {}
+    marker = home / "public" / "published-api"
+    store = current_store(home / "public")
+    return {
+        "children": heartbeat.get("children") or {},
+        "address": marker.read_text().split()[0] if marker.exists() else None,
+        "export": store.name.removeprefix("store-") if store else None,
+        "model_enabled": not (home / "public" / "llm-disabled").exists(),
+        "guard_config": (home / "config" / "public_guard.toml").exists(),
+        "moderation": list(reversed(read_log(home, n))),
     }
 
 

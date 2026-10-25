@@ -53,13 +53,14 @@ function show(tab) {
   document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
   if (!loaded[tab]) {
     loaded[tab] = true;
-    ({ overview: loadOverview, graph: loadProjectGraph, audit: loadAudit, search: () => $("#q").focus() })[tab]();
+    ({ overview: loadOverview, graph: loadProjectGraph, audit: loadAudit, search: () => $("#q").focus(),
+       public: loadPublic })[tab]();
   }
 }
 document.querySelectorAll("nav button").forEach((b) => b.addEventListener("click", () => show(b.dataset.tab)));
 document.addEventListener("keydown", (e) => {
   if (e.target.matches("input, select")) return;
-  const tab = { 1: "overview", 2: "graph", 3: "search", 4: "audit" }[e.key];
+  const tab = { 1: "overview", 2: "graph", 3: "search", 4: "audit", 5: "public" }[e.key];
   if (tab) show(tab);
   if (e.key === "/") { e.preventDefault(); show("search"); $("#q").focus(); }
 });
@@ -99,6 +100,8 @@ async function loadOverview() {
   ]);
   table("#devices", [["device", (r) => r.name], ["scopes", (r) => r.scopes], ["last seen", (r) => r.revoked_at ? "revoked" : ago(r.last_seen)]],
         d.devices);
+  table("#machines", [["machine", (r) => r.machine], ["sessions", (r) => r.sessions], ["latest", (r) => ago(r.updated)]],
+        d.machines || []);
   $("#status").textContent = "updated " + new Date().toLocaleTimeString();
 }
 
@@ -209,6 +212,23 @@ async function loadAudit() {
   table("#audit", [["time", (r) => r.ts.replace("T", " ").slice(0, 19)], ["actor", (r) => r.actor],
                    ["action", (r) => r.action], ["target", (r) => (r.target || "").slice(0, 70)],
                    ["outcome", (r) => r.outcome]], rows);
+}
+
+// ---- public site ---------------------------------------------------------
+async function loadPublic() {
+  const p = await api("/v1/console/public");
+  const kids = Object.entries(p.children).map(([k, c]) => k + ": " + c.state).join(", ") || "not running";
+  table("#pub-status", [["", (r) => r[0]], ["", (r) => r[1]]], [
+    ["processes", kids], ["address", p.address || "none yet"], ["public export", p.export || "none"],
+    ["visitor model", p.model_enabled ? "on" : "OFF (excerpts only)"],
+    ["guard config", p.guard_config ? "config/public_guard.toml" : "built-in defaults"],
+  ]);
+  $("#mod-info").textContent = p.moderation.length
+    ? p.moderation.length + " flagged attempt(s), newest first. Client ids are salted hashes, not addresses."
+    : "No flagged attempts.";
+  table("#moderation", [["time", (r) => r.t.replace("T", " ").slice(0, 19)], ["stage", (r) => r.stage],
+                        ["why", (r) => r.reasons.join(", ")], ["client", (r) => r.client.slice(0, 8)],
+                        ["question", (r) => r.question.slice(0, 160)]], p.moderation);
 }
 
 if (sessionStorage.getItem(TOKEN_KEY)) loadOverview().catch(() => {}); else showLogin();

@@ -281,6 +281,10 @@ def build_app(settings: Settings, embedder: Embedder, service: MemoryService | N
             except ValueError as e:
                 return JSONResponse({"error": str(e)}, status_code=400)
 
+    @mcp.custom_route("/v1/console/public", methods=["GET"])
+    async def console_public(request: Request):
+        return _json(console_api.public_status(settings.data_dir.parent))
+
     @mcp.custom_route("/v1/console/audit", methods=["GET"])
     async def console_audit(request: Request):
         try:
