@@ -195,6 +195,8 @@ def summary(svc, home: Path, days: int = 30) -> dict:
     bucket = _bucket(days if days > 0 else 10_000)
     spark: dict[str, int] = {}
     for d in in_period:
+        if d["group"] == "Files & notes":
+            continue  # files have no date of their own; the trend follows sessions and chats
         k = _bucket_key(d["when"], bucket)
         spark[k] = spark.get(k, 0) + 1
     hb_file = home / "run" / "heartbeat.json"
@@ -325,7 +327,7 @@ def activity(svc, n: int = 60) -> list[dict]:
              "graph_rebuild": "rebuilt the knowledge graph", "snapshot": "backed up", "public_agent": "visitor question"}
     out = []
     for r in svc.sqlite.audit_tail(min(n * 4, 2000)):
-        if r["action"] in ("search", "get", "context", "public_search") or r["outcome"] == "unchanged":
+        if r["action"] in ("search", "get", "context", "public_search") or r["outcome"] in ("unchanged", "skipped"):
             continue  # reads, not changes
         out.append({"ts": r["ts"], "what": words.get(r["action"], r["action"].replace("_", " ")),
                     "target": (r["target"] or "")[-90:], "outcome": r["outcome"], "actor": r["actor"]})

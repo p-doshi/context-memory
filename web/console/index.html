@@ -4,75 +4,130 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Memory console</title>
+<link rel="icon" href="data:,">
 <link rel="stylesheet" href="/console/style.css">
 </head>
 <body>
-<header>
-  <h1>Memory console</h1>
-  <nav>
+<header class="top">
+  <span class="brand">Your memory</span>
+  <nav class="tabs" aria-label="Sections">
     <button data-tab="overview" class="active">Overview <kbd>1</kbd></button>
-    <button data-tab="graph">Graph <kbd>2</kbd></button>
-    <button data-tab="search">Search <kbd>3</kbd></button>
-    <button data-tab="audit">Audit <kbd>4</kbd></button>
-    <button data-tab="public">Public <kbd>5</kbd></button>
+    <button data-tab="map">Knowledge map <kbd>2</kbd></button>
+    <button data-tab="activity">Activity <kbd>3</kbd></button>
+    <button data-tab="search">Search <kbd>4</kbd></button>
+    <button data-tab="public">Public site <kbd>5</kbd></button>
   </nav>
-  <span id="status" class="muted"></span>
+  <span id="status" class="muted small"></span>
+  <button class="icon" id="theme" type="button" aria-label="Colour theme: system">◐</button>
 </header>
 
-<section id="login" hidden>
+<section id="login" class="wrap" hidden>
   <p>Paste the console token (from <code>cmh console</code>). It is kept in this tab only.</p>
-  <input id="token-input" type="password" autocomplete="off" placeholder="cmh_...">
-  <button id="token-save">Open</button>
+  <div class="row"><input id="token-input" type="password" autocomplete="off" placeholder="cmh_...">
+    <button id="token-save" class="primary">Open</button></div>
 </section>
 
-<main>
+<main class="wrap">
+  <!-- Overview -->
   <section id="tab-overview" class="tab">
-    <div id="tiles" class="tiles"></div>
-    <div class="cols">
-      <div><h2>Projects</h2><table id="projects"></table>
-           <h2>Machines</h2><table id="machines"></table></div>
-      <div><h2>Daemon</h2><table id="daemon"></table>
-           <h2>Devices</h2><table id="devices"></table></div>
+    <div class="filters" role="group" aria-label="Period">
+      <span class="muted small">Period</span>
+      <button data-days="7">7 days</button><button data-days="30" class="on">30 days</button>
+      <button data-days="90">90 days</button><button data-days="365">1 year</button><button data-days="0">All time</button>
+    </div>
+    <p class="story" id="story">Loading…</p>
+    <div class="kpis" id="kpis"></div>
+
+    <article class="card">
+      <header><h2>When things happened</h2>
+        <p class="sub">Each column counts the coding sessions and AI chats from that time, by where they came from. (Files and
+          notes have no date of their own, so they appear in the project chart below instead.)</p></header>
+      <div class="legend" id="tl-legend"></div>
+      <div class="chart" id="tl-chart"></div>
+      <button class="link" data-table="tl">Show as table</button><div class="tablebox" id="tl-table" hidden></div>
+    </article>
+
+    <div class="two">
+      <article class="card">
+        <header><h2>Where it comes from</h2>
+          <p class="sub">Documents per project, split by source. Longest bar = the project the memory knows most about.</p></header>
+        <div class="chart" id="pj-chart"></div>
+        <button class="link" data-table="pj">Show as table</button><div class="tablebox" id="pj-table" hidden></div>
+      </article>
+      <article class="card">
+        <header><h2>Kept up to date</h2>
+          <p class="sub">When a file or session changes, its old passages are retired (kept as history, not deleted) and the
+            new version takes over. Columns count passages retired.</p></header>
+        <div class="chart" id="rt-chart"></div>
+        <button class="link" data-table="rt">Show as table</button><div class="tablebox" id="rt-table" hidden></div>
+      </article>
+    </div>
+
+    <div class="two">
+      <article class="card"><header><h2>Machines</h2><p class="sub">Where sessions were recorded.</p></header>
+        <table id="machines"></table></article>
+      <article class="card"><header><h2>Health</h2><p class="sub">The always-on indexer and its safeguards.</p></header>
+        <table id="health"></table></article>
     </div>
   </section>
 
-  <section id="tab-public" class="tab" hidden>
-    <div class="cols">
-      <div><h2>Public site</h2><table id="pub-status"></table>
-           <p class="muted">Switch the visitor model with <code>cmh public model-off</code> / <code>model-on</code>;
-             rules and replies live in <code>config/public_guard.toml</code> (reloaded on save).</p></div>
-      <div><h2>Moderation log</h2><p class="muted" id="mod-info"></p><table id="moderation"></table></div>
+  <!-- Knowledge map -->
+  <section id="tab-map" class="tab" hidden>
+    <div class="filters">
+      <label class="muted small" for="m-project">Project</label>
+      <select id="m-project"></select>
+      <button id="m-play" class="primary" type="button">▶ Play history</button>
+      <input id="m-time" type="range" min="0" max="1000" value="1000" aria-label="Show the map as of this date">
+      <span id="m-date" class="when"></span>
+    </div>
+    <p class="sub" id="m-info">Pick a project. Each dot is something the memory knows; lines show how they relate.
+      Drag the slider (or press play) to see the map as it was on any date.</p>
+    <div class="mapwrap">
+      <div id="cy" class="timeline"></div>
+      <aside class="side" id="m-side">
+        <h3>How to read this</h3>
+        <ul class="key" id="m-legend"></ul>
+        <p class="muted small">Click any dot for details.</p>
+      </aside>
     </div>
   </section>
 
-  <section id="tab-graph" class="tab" hidden>
-    <div class="toolbar">
-      <button id="g-projects">Project projection</button>
-      <input id="g-entity" placeholder="entity, e.g. context_memory.memory.service" size="40">
-      <select id="g-depth"><option value="1">depth 1</option><option value="2">depth 2</option></select>
-      <button id="g-go">Show neighbourhood</button>
-      <span id="g-info" class="muted"></span>
+  <!-- Activity -->
+  <section id="tab-activity" class="tab" hidden>
+    <p class="story" id="chain"></p>
+    <div class="filters" role="group" aria-label="Kind of change" id="a-filter">
+      <button data-kind="" class="on">Everything</button><button data-kind="indexed">Indexed</button>
+      <button data-kind="retired">Retired</button><button data-kind="device">Devices</button>
+      <button data-kind="publish">Public site</button>
     </div>
-    <div id="legend" class="legend"></div>
-    <div id="cy"></div>
+    <div id="feed" class="feed"></div>
   </section>
 
+  <!-- Search -->
   <section id="tab-search" class="tab" hidden>
-    <div class="toolbar">
-      <input id="q" placeholder="search memory" size="60">
-      <select id="mode"><option value="">default</option><option>vector</option><option>hybrid</option><option>bm25</option></select>
-      <button id="q-go">Search</button>
-      <span id="q-info" class="muted"></span>
+    <div class="filters">
+      <input id="q" placeholder="Search everything, including chats" size="50">
+      <select id="mode" aria-label="Search method"><option value="">default</option><option value="hybrid">meaning + keywords</option>
+        <option value="vector">meaning only</option><option value="bm25">keywords only</option></select>
+      <button id="q-go" class="primary">Search</button>
+      <span id="q-info" class="muted small"></span>
     </div>
-    <div id="results"></div>
+    <div id="results" class="results"></div>
   </section>
 
-  <section id="tab-audit" class="tab" hidden>
-    <p id="chain" class="muted"></p>
-    <table id="audit"></table>
+  <!-- Public site -->
+  <section id="tab-public" class="tab" hidden>
+    <div class="two">
+      <article class="card"><header><h2>Public site</h2><p class="sub">What the internet can reach, and its switches.</p></header>
+        <table id="pub-status"></table>
+        <p class="muted small">Switch the visitor model with <code>cmh public model-off</code> / <code>model-on</code>;
+          rules and replies live in <code>config/public_guard.toml</code> (reloaded on save).</p></article>
+      <article class="card"><header><h2>Moderation log</h2><p class="sub" id="mod-info"></p></header>
+        <div id="moderation" class="feed"></div></article>
+    </div>
   </section>
 </main>
-<script src="/console/vendor/cytoscape.min.js"></script>
+<div class="tip" id="tip" role="tooltip" hidden></div>
 <script src="/console/app.js"></script>
 </body>
 </html>

@@ -298,3 +298,25 @@ def test_console_machines_and_public_status(client, svc, settings):
     assert p["model_enabled"] and p["moderation"][0]["reasons"] == ["instruction_override"]
     reader = hub.add_device(svc.sqlite, "laptop2", None)
     assert client.get("/v1/console/public", headers={"Authorization": f"Bearer {reader}"}).status_code == 403
+
+
+def test_console_time_views(client, svc, settings):
+    svc.ingest_text(text="# s\nsession about the gate", project="p", source="claude", kind="chat",
+                    path="C:/x/.claude/projects/p/s.jsonl",
+                    meta={"platform": "claude-code", "first_timestamp": "2026-03-04T10:00:00Z"})
+    svc.ingest_text(text="# c\nweb chat", project="p", source="claude", kind="chat", path="claude.ai://a/chat/1",
+                    meta={"platform": "claude.ai", "created_at": "2025-12-01T09:00:00Z"})
+    admin = hub.add_device(svc.sqlite, "owner", None, scopes="admin")
+    h = {"Authorization": f"Bearer {admin}"}
+    sm = client.get("/v1/console/summary", params={"days": 0}, headers=h).json()
+    assert sm["documents"] == 2 and sm["oldest"].startswith("2025-12-01")
+    tl = client.get("/v1/console/timeline", params={"days": 0}, headers=h).json()
+    assert tl["bucket"] == "month" and sum(r["This laptop"] + r["claude.ai"] for r in tl["rows"]) == 2
+    assert {r["t"] for r in tl["rows"]} >= {"2025-12-01", "2026-03-01"}          # by when it happened
+    pj = client.get("/v1/console/projects", headers=h).json()
+    assert pj[0]["project"] == "p" and pj[0]["first"].startswith("2025-12-01")
+    mp = client.get("/v1/console/project-map", params={"name": "p"}, headers=h).json()
+    assert {n["type"] for n in mp["nodes"]} >= {"project", "session", "chat"} and mp["range"][0].startswith("2025-12-01")
+    assert client.get("/v1/console/activity", headers=h).status_code == 200
+    reader = hub.add_device(svc.sqlite, "laptop2", None)
+    assert client.get("/v1/console/summary", headers={"Authorization": f"Bearer {reader}"}).status_code == 403

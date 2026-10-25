@@ -281,6 +281,38 @@ def build_app(settings: Settings, embedder: Embedder, service: MemoryService | N
             except ValueError as e:
                 return JSONResponse({"error": str(e)}, status_code=400)
 
+    def _days(request: Request, default: int = 90) -> int:
+        try:
+            return max(0, min(int(request.query_params.get("days", default)), 3650))
+        except ValueError:
+            return default
+
+    @mcp.custom_route("/v1/console/summary", methods=["GET"])
+    async def console_summary(request: Request):
+        with lock:
+            return _json(console_api.summary(svc, settings.data_dir.parent, _days(request, 30)))
+
+    @mcp.custom_route("/v1/console/timeline", methods=["GET"])
+    async def console_timeline(request: Request):
+        with lock:
+            return _json(console_api.timeline(svc, _days(request)))
+
+    @mcp.custom_route("/v1/console/projects", methods=["GET"])
+    async def console_projects(request: Request):
+        with lock:
+            return _json(console_api.projects_breakdown(svc))
+
+    @mcp.custom_route("/v1/console/project-map", methods=["GET"])
+    async def console_project_map(request: Request):
+        name = request.query_params.get("name", "")[:200]
+        with lock:
+            return _json(console_api.project_map(svc, name))
+
+    @mcp.custom_route("/v1/console/activity", methods=["GET"])
+    async def console_activity(request: Request):
+        with lock:
+            return _json(console_api.activity(svc, 80))
+
     @mcp.custom_route("/v1/console/public", methods=["GET"])
     async def console_public(request: Request):
         return _json(console_api.public_status(settings.data_dir.parent))
