@@ -301,8 +301,8 @@ def test_console_machines_and_public_status(client, svc, settings):
 
 
 def test_console_time_views(client, svc, settings):
-    svc.ingest_text(text="# s\nsession about the gate", project="p", source="claude", kind="chat",
-                    path="C:/x/.claude/projects/p/s.jsonl",
+    svc.ingest_text(text="# s\nsession about the gate in context_memory/policy/disclosure.py", project="p",
+                    source="claude", kind="chat", path="C:/x/.claude/projects/p/s.jsonl",
                     meta={"platform": "claude-code", "first_timestamp": "2026-03-04T10:00:00Z"})
     svc.ingest_text(text="# c\nweb chat", project="p", source="claude", kind="chat", path="claude.ai://a/chat/1",
                     meta={"platform": "claude.ai", "created_at": "2025-12-01T09:00:00Z"})
@@ -315,8 +315,15 @@ def test_console_time_views(client, svc, settings):
     assert {r["t"] for r in tl["rows"]} >= {"2025-12-01", "2026-03-01"}          # by when it happened
     pj = client.get("/v1/console/projects", headers=h).json()
     assert pj[0]["project"] == "p" and pj[0]["first"].startswith("2025-12-01")
-    mp = client.get("/v1/console/project-map", params={"name": "p"}, headers=h).json()
-    assert {n["type"] for n in mp["nodes"]} >= {"project", "session", "chat"} and mp["range"][0].startswith("2025-12-01")
+    assert pj[0]["latest_group"] == "This laptop" and pj[0]["latest_when"].startswith("2026-03-04")
+    st = client.get("/v1/console/project-story", params={"name": "p"}, headers=h).json()
+    assert st["counts"] == {"sessions": 1, "chats": 1, "files": 0} and st["bucket"] == "week"
+    assert st["columns"][0]["t"] == "2025-12-01" and st["columns"][-1]["t"] == "2026-03-02"   # Mondays, every week
+    assert len(st["columns"]) == 14 and sum(c["total"] for c in st["columns"]) == 2
+    assert [f["path"] for f in st["files"]] == ["context_memory/policy/disclosure.py"]
+    assert st["files"][0]["cells"] == {"2026-03-02": 1}
+    assert st["items"][0]["files"] == ["context_memory/policy/disclosure.py"] and st["items"][1]["files"] == []
+    assert client.get("/v1/console/project-story", params={"name": "nope"}, headers=h).json()["items"] == []
     assert client.get("/v1/console/activity", headers=h).status_code == 200
     reader = hub.add_device(svc.sqlite, "laptop2", None)
     assert client.get("/v1/console/summary", headers={"Authorization": f"Bearer {reader}"}).status_code == 403

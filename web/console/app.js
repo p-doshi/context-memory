@@ -11,7 +11,6 @@ const TOKEN_KEY = "cmh-console-token";
 })();
 
 const $ = (s) => document.querySelector(s);
-const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
 function el(tag, props = {}, ...kids) {
   const e = document.createElement(tag);
   for (const [k, v] of Object.entries(props)) {
@@ -65,18 +64,18 @@ $("#theme").addEventListener("click", () => {
 
 // ---- tabs ------------------------------------------------------------------------
 const loaded = {};
-const LOADERS = { overview: () => loadOverview(), map: () => loadMap(), activity: () => loadActivity(),
+const LOADERS = { overview: () => loadOverview(), projects: () => loadProjects(), activity: () => loadActivity(),
                   search: () => $("#q").focus(), public: () => loadPublic() };
 function show(tab) {
   document.querySelectorAll(".tab").forEach((t) => (t.hidden = t.id !== "tab-" + tab));
   document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
   if (!loaded[tab]) { loaded[tab] = true; LOADERS[tab](); }
-  if (tab === "map") renderMap();
+  if (tab === "projects") renderStory();
 }
 document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => show(b.dataset.tab)));
 document.addEventListener("keydown", (e) => {
   if (e.target.matches("input, select, textarea")) return;
-  const tab = { 1: "overview", 2: "map", 3: "activity", 4: "search", 5: "public" }[e.key];
+  const tab = { 1: "overview", 2: "projects", 3: "activity", 4: "search", 5: "public" }[e.key];
   if (tab) show(tab);
 });
 
@@ -96,8 +95,7 @@ const hideTip = () => { tip.hidden = true; };
 // ---- shared chart pieces ---------------------------------------------------------
 const GROUP_VARS = { "This laptop": "--s1", "Other machines": "--s2", "claude.ai": "--s3", "Perplexity": "--s4",
                      "Files & notes": "--s5" };
-const EXTRA_VARS = { Retired: "--s1" };   // single-series charts take slot 1
-const groupColor = (g) => cssVar(GROUP_VARS[g] || EXTRA_VARS[g] || "--neutral");
+const groupColor = (g) => cssVar(GROUP_VARS[g] || "--neutral");
 function legend(target, groups) {
   $(target).replaceChildren(...groups.map((g) => el("span", {}, el("i", { style: `background:${groupColor(g)}` }), g)));
 }
@@ -122,8 +120,9 @@ function table(target, head, rows) {
 }
 document.querySelectorAll("[data-table]").forEach((b) => b.addEventListener("click", () => {
   const box = $("#" + b.dataset.table + "-table");
+  if (box.hidden) b.dataset.label = b.textContent;
   box.hidden = !box.hidden;
-  b.textContent = box.hidden ? "Show as table" : "Hide table";
+  b.textContent = box.hidden ? b.dataset.label : "Hide table";
 }));
 
 // Stacked columns: one column per time bucket, segments by group (2px surface gaps,
@@ -142,6 +141,9 @@ function stackedColumns(target, rows, groups, bucket, opts = {}) {
   }
   svg.prepend(grid);
   const band = iw / Math.max(1, rows.length), bw = Math.min(24, Math.max(3, band * 0.7));
+  const sel = rows.findIndex((r) => r.t === opts.selected);
+  const sw = Math.min(band - 2, bw + 16);
+  if (sel >= 0) grid.append(s("rect", { x: PAD.l + sel * band + (band - sw) / 2, y: PAD.t, width: Math.max(2, sw), height: ih, rx: 6, fill: cssVar("--soft") }));
   const every = Math.ceil(rows.length / Math.max(1, Math.floor(iw / 64)));
   rows.forEach((r, i) => {
     const x = PAD.l + i * band + (band - bw) / 2;
@@ -163,6 +165,11 @@ function stackedColumns(target, rows, groups, bucket, opts = {}) {
     hit.addEventListener("pointermove", (e) => showTip(e, title, tipRows()));
     hit.addEventListener("focus", (e) => showTip(e, title, tipRows()));
     hit.addEventListener("pointerleave", hideTip); hit.addEventListener("blur", hideTip);
+    if (opts.onPick) {
+      hit.classList.add("pick");
+      hit.addEventListener("click", () => opts.onPick(r.t));
+      hit.addEventListener("keydown", (e) => (e.key === "Enter" || e.key === " ") && opts.onPick(r.t));
+    }
     svg.append(g, hit);
     if (i % every === 0) svg.append(s("text", { x: PAD.l + i * band + band / 2, y: H - 10, "text-anchor": "middle" }, bucketLabel(r.t, bucket)));
   });
@@ -217,42 +224,76 @@ let days = 30, OV = null;
 const ago = (secs) => secs == null ? "never" : secs < 120 ? `${secs} seconds ago` : secs < 7200 ? `${Math.round(secs / 60)} minutes ago`
   : `${Math.round(secs / 3600)} hours ago`;
 const periodWords = () => days === 0 ? "in total" : `in the last ${days} days`;
+const DAYMS = 864e5;
+function rel(ts) {
+  const d = Math.floor((Date.now() - Date.parse(ts.slice(0, 19) + "Z")) / DAYMS);
+  return d <= 0 ? "today" : d === 1 ? "yesterday" : d < 14 ? `${d} days ago` : d < 60 ? `${Math.round(d / 7)} weeks ago`
+    : new Date(ts.slice(0, 10) + "T00:00:00").toLocaleDateString("en", { month: "short", year: "numeric" });
+}
+const longDate = (ts) => new Date(ts.slice(0, 10) + "T00:00:00").toLocaleDateString("en", { month: "short", day: "numeric", year: "numeric" });
 document.querySelectorAll("#tab-overview .filters button").forEach((b) => b.addEventListener("click", () => {
   days = Number(b.dataset.days);
   document.querySelectorAll("#tab-overview .filters button").forEach((x) => x.classList.toggle("on", x === b));
   loadOverview();
 }));
 
+function compareWords(now, before) {
+  if (!before) return "";
+  const r = now / before;
+  return r >= 1.8 ? `, about ${r >= 3 ? Math.round(r) : r.toFixed(1)} times as many as the ${days} days before`
+    : r >= 1.15 ? `, more than the ${days} days before` : r > 0.87 ? `, about the same as the ${days} days before`
+    : r > 0.5 ? `, fewer than the ${days} days before` : `, a quieter stretch than the ${days} days before`;
+}
 function story(sm, ov) {
-  const places = Object.values(sm.sources).filter((n) => n > 0).length;
   const oldest = sm.oldest ? new Date(sm.oldest).toLocaleDateString("en", { month: "long", year: "numeric" }) : "";
-  const p = $("#story");
-  p.replaceChildren("Your memory holds ", el("b", {}, fmt(sm.documents) + " documents"), ` from ${places} kinds of source across `,
-    el("b", {}, sm.projects + " projects"), oldest ? `, reaching back to ${oldest}. ` : ". ",
-    days === 0 ? "" : el("b", {}, fmt(sm.documents_in_period)), days === 0 ? "" : ` of them happened ${periodWords()}. `,
-    `It last checked for changes ${ago(sm.last_pass_seconds)}`,
-    ov && ov.audit_chain && !ov.audit_chain.ok ? ", and the audit log needs attention." : ", and its tamper-evident log is intact.");
+  const intact = ov && ov.audit_chain && !ov.audit_chain.ok ? "but the audit log needs attention." : "and its tamper-evident log is intact.";
+  const p = $("#story"), kids = [];
+  if (days > 0 && sm.worked_in_period) {
+    kids.push(`In the last ${days} days you worked on `, el("b", {}, `${sm.projects_in_period} project${sm.projects_in_period === 1 ? "" : "s"}`),
+      " in ", el("b", {}, `${fmt(sm.worked_in_period)} sessions and chats`), compareWords(sm.worked_in_period, sm.worked_previous), ". ");
+    if (sm.top_project && sm.projects_in_period > 1)
+      kids.push(sm.top_project_share >= 0.5 ? "Most of it was " : "The biggest share was ", el("b", {}, sm.top_project), ". ");
+  } else if (days > 0) {
+    kids.push(`Nothing new happened in the last ${days} days. `);
+  }
+  kids.push(`The memory holds ${fmt(sm.documents)} things from ${sm.projects} projects`, oldest ? `, going back to ${oldest}. ` : ". ",
+    `It last checked for changes ${ago(sm.last_pass_seconds)}, ${intact}`);
+  p.replaceChildren(...kids);
 }
 function kpis(sm) {
-  const delta = days > 0 && sm.documents_previous >= 0 ? sm.documents_in_period - sm.documents_previous : null;
+  const per = (n) => sm.documents ? Math.max(1, Math.round(n / sm.documents)) : 0;
+  const every = sm.interval_seconds ? Math.round(sm.interval_seconds / 60) : null;
+  const late = sm.last_pass_seconds != null && sm.interval_seconds && sm.last_pass_seconds > 3 * sm.interval_seconds + 600;
   const tiles = [
-    { hero: true, label: "Documents remembered", value: fmt(sm.documents),
-      means: "Sessions, chats, files and notes it has read and can search.",
-      delta: delta == null ? "" : `${delta >= 0 ? "+" : "−"}${fmt(Math.abs(delta))} vs the previous ${days} days`, spark: true },
-    { label: "Searchable passages", value: compact(sm.passages),
-      means: "Documents are cut into passages; an assistant receives the few that match its question." },
-    { label: "Connections", value: compact(sm.connections),
-      means: "Links in the knowledge graph: what each file defines, imports or mentions, and where it came from." },
-    { label: days ? `Updates kept as history (${days} days)` : "Updates kept as history", value: compact(sm.retired_in_period),
-      means: "Older passages retired because the source changed; kept so you can see what it used to say." },
+    { value: fmt(sm.documents), what: "things remembered: sessions, chats, files and notes",
+      so: days > 0 ? `${fmt(sm.documents_in_period)} of them are from the last ${days} days. Any of them can come back as context in a new chat.`
+                   : "Any of them can come back as context in a new chat.", spark: true },
+    { value: "~" + per(sm.passages), what: `passages per thing, on average (${fmt(sm.passages)} in all)`,
+      so: `A question pulls back the ${sm.search_k || 8} best passages, so an assistant reads a few relevant pieces instead of whole files.` },
+    { value: "~" + per(sm.links_from_documents), what: "links per thing to the files and code it touched",
+      so: "These links are how a question about one file finds the sessions that worked on it." },
+    { value: sm.last_pass_seconds == null ? "–" : sm.last_pass_seconds < 3600 ? `${Math.max(1, Math.round(sm.last_pass_seconds / 60))} min`
+                                                                              : `${Math.round(sm.last_pass_seconds / 3600)} h`,
+      what: "since it last checked your files and chats for changes",
+      so: late ? "Overdue: the indexer may have stopped. Check Health below." : every ? `Up to date. It checks every ${every} minutes.` : "Up to date.",
+      cls: late ? "warn" : "ok" },
   ];
   $("#kpis").replaceChildren(...tiles.map((t) => {
-    const card = el("div", { class: "kpi" + (t.hero ? " hero" : "") }, el("div", { class: "label" }, t.label),
-                    el("div", { class: "value" }, t.value));
-    if (t.delta) card.append(el("div", { class: "delta" }, t.delta));
-    card.append(el("p", { class: "means" }, t.means));
-    if (t.spark) { const sv = s("svg", { "aria-hidden": "true" }); sparkline(sv, sm.spark.map((x) => x.n)); card.append(sv); }
+    const card = el("div", { class: "kpi" }, el("div", { class: "value" }, t.value), el("div", { class: "what" }, t.what));
+    const so = el("p", { class: "so" + (t.cls ? " " + t.cls : "") }, t.so);
+    card.append(so);
+    if (t.spark && sm.spark.length > 1) { const sv = s("svg", { "aria-hidden": "true" }); sparkline(sv, sm.spark.map((x) => x.n)); card.append(sv); }
     return card;
+  }));
+}
+function latestList(pj) {
+  const rows = pj.filter((p) => p.latest_when).slice(0, 7);
+  $("#latest").replaceChildren(...rows.map((p) => {
+    const b = el("button", { class: "proj", type: "button" }, el("i", { class: "dot", style: `background:${groupColor(p.latest_group)}` }),
+      el("span", { class: "pbody" }, el("span", { class: "phead" }, el("b", {}, p.project), el("span", { class: "when-rel" }, rel(p.latest_when))),
+         el("span", { class: "plast" }, p.latest_title)));
+    b.addEventListener("click", () => { show("projects"); openProject(p.project); });
+    return b;
   }));
 }
 async function loadOverview() {
@@ -275,239 +316,177 @@ function renderOverview() {
   stackedColumns("#tl-chart", drows, dated, tl.bucket, { label: "Sessions and chats over time by source" });
   table("#tl-table", ["Period", ...dated, "Total"],
         drows.map((r) => [bucketLabel(r.t, tl.bucket), ...dated.map((g) => fmt(r[g])), fmt(dated.reduce((a, g) => a + r[g], 0))]));
+  latestList(pj);
   projectBars("#pj-chart", [...pj].sort((a, b) => b.total - a.total), tl.groups);
   table("#pj-table", ["Project", ...tl.groups, "Total", "Last activity"],
         pj.map((p) => [p.project, ...tl.groups.map((g) => fmt(p[g])), fmt(p.total), p.last.slice(0, 10)]));
   const rt = tl.rows.filter((r) => r.retired > 0);
-  stackedColumns("#rt-chart", rt.map((r) => ({ t: r.t, Retired: r.retired })), ["Retired"], tl.bucket,
-                 { height: 180, label: "Passages retired over time" });
-  table("#rt-table", ["Period", "Passages retired"], rt.map((r) => [bucketLabel(r.t, tl.bucket), fmt(r.retired)]));
+  $("#kept").replaceChildren(...(sm.retired_in_period
+    ? [el("b", {}, `${fmt(sm.retired_in_period)} passages`), ` were replaced ${periodWords()}`,
+       sm.retired_top_project ? ", mostly in " : "", sm.retired_top_project ? el("b", {}, sm.retired_top_project) : "",
+       ". The old text is kept, so you can still ask what a file used to say."]
+    : [`Nothing was replaced ${periodWords()}.`]));
+  table("#rt-table", ["Period", "Passages replaced"], rt.map((r) => [bucketLabel(r.t, tl.bucket), fmt(r.retired)]));
   const m = $("#machines");
   m.replaceChildren(el("tr", {}, el("th", {}, "Machine"), el("th", { class: "n" }, "Sessions"), el("th", { class: "n" }, "Latest")));
   for (const r of ov.machines || []) m.append(el("tr", {}, el("td", {}, r.machine), el("td", { class: "n" }, fmt(r.sessions)),
                                                      el("td", { class: "n" }, (r.updated || "").slice(0, 10))));
   const dm = ov.daemon || {}, b = ov.backup;
-  const tunnels = Object.entries(dm.tunnels || {}).map(([h, t]) => `${h}: ${t.state}`).join(", ") || "none";
+  const tunnels = Object.entries(dm.tunnels || {});
+  const down = tunnels.filter(([, t]) => t.state !== "up");
   const h = $("#health");
   h.replaceChildren(...[
-    ["Indexer", dm.seconds_since_pass == null ? "not run yet" : `last pass ${ago(dm.seconds_since_pass)} (${dm.status})`],
-    ["Tunnels to servers", tunnels],
-    ["Graphics card", dm.gpu ? `${dm.gpu.temp_c} °C, ${dm.gpu.mem_mb} MB in use` : "n/a"],
-    ["Latest backup", b ? `${b.created.replace("T", " ").slice(0, 16)} (${b.ok ? "verified" : "FAILED"}, ${Math.round(b.bytes / 1e6)} MB)` : "none"],
-    ["Audit log", ov.audit_chain.ok ? `intact (${fmt(ov.audit_chain.rows)} chained entries)` : `BROKEN at entry ${ov.audit_chain.broken_at}`],
-    ["Devices with access", (ov.devices || []).filter((d) => !d.revoked_at).map((d) => d.name).join(", ")],
-  ].map(([k, v]) => el("tr", {}, el("td", {}, k), el("td", {}, v))));
+    ["Indexer", dm.seconds_since_pass == null ? ["not run yet", "warn"] : [`running, last pass ${ago(dm.seconds_since_pass)}`, dm.status === "ok" ? "ok" : "warn"]],
+    ["Tunnels to servers", !tunnels.length ? ["none set up", ""] : down.length
+      ? [`${down.map(([n]) => n).join(", ")} down (${tunnels.length - down.length} of ${tunnels.length} up)`, "warn"] : ["all up", "ok"]],
+    ["Graphics card", dm.gpu ? [`${dm.gpu.temp_c} °C, ${fmt(dm.gpu.mem_mb)} MB in use`, ""] : ["n/a", ""]],
+    ["Latest backup", b ? [`${b.created.replace("T", " ").slice(0, 16)}, ${b.ok ? "verified" : "FAILED"} (${Math.round(b.bytes / 1e6)} MB)`, b.ok ? "" : "warn"] : ["none", "warn"]],
+    ["Tamper-evident log", ov.audit_chain.ok ? [`intact (${fmt(ov.audit_chain.rows)} entries)`, "ok"] : [`BROKEN at entry ${ov.audit_chain.broken_at}`, "warn"]],
+    ["Devices with access", [(ov.devices || []).filter((d) => !d.revoked_at).map((d) => d.name).join(", "), ""]],
+  ].map(([k, [v, cls]]) => el("tr", {}, el("td", {}, k), el("td", { class: cls }, v))));
 }
 let rt;
 addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(rerender, 200); });
-function rerender() { renderOverview(); renderMap(); }
+function rerender() { renderOverview(); renderStory(); }
 
-// ---- knowledge map: a timeline of what the memory learned -------------------------
-// Time runs left to right; each kind of thing has its own lane. Links are drawn only
-// for the selected item, so the picture never turns into a hairball. The slider is a
-// "now" line: everything after it fades out.
-let MAP = null, playing = null, selected = null, nowFrac = 1;
-const TYPE_WORDS = { project: "Project", session: "Coding session", chat: "AI chat", file: "File or note",
-                     module: "Code module", "mentioned file": "File mentioned in a session" };
-const LANES = [["session", "Coding sessions"], ["chat", "AI chats"], ["file", "Files and notes"],
-               ["module", "Code modules"], ["mentioned file", "Files mentioned"]];
-const DAY = 864e5;
-const tms = (w) => Date.parse((w || "").slice(0, 19) + "Z");
-function nodeColor(n) { return n.group ? groupColor(n.group) : cssVar("--neutral"); }
-
-async function loadMap() {
-  const pj = await api("/v1/console/projects");
-  const span = (p) => tms(p.last) - tms(p.first);
-  // Open on the project with the longest history (with at least a handful of documents).
-  const ordered = [...pj].sort((a, b) => (b.total >= 5) - (a.total >= 5) || span(b) - span(a));
-  const sel = $("#m-project");
-  sel.replaceChildren(...ordered.map((p) => el("option", { value: p.project },
-    `${p.project} · ${p.total} docs · ${p.first.slice(0, 7)} → ${p.last.slice(0, 7)}`)));
-  sel.addEventListener("change", () => drawMap(sel.value));
-  mapLegend();
-  if (ordered.length) drawMap(ordered[0].project);
+// ---- projects: one project's story over time --------------------------------------
+// Activity per week, the files its sessions and chats worked on (a file x week grid:
+// rows in order of first appearance, square size and shade = how many items touched
+// the file that week), and a dated list for the chosen week or file.
+let PJ = null, ST = null, pick = null;
+const shortPath = (p) => p.split("/").slice(-2).join("/");
+const items = (n) => n === 1 ? "1 session or chat" : `${fmt(n)} sessions and chats`;
+const cap = (x) => x.charAt(0).toUpperCase() + x.slice(1);
+const QLEVELS = [[1, "1"], [2, "2"], [3, "3"], [4, "4 or more"]];
+function weekWords(t, bucket) {
+  const d = new Date(t + "T00:00:00");
+  return bucket === "month" ? d.toLocaleDateString("en", { month: "long", year: "numeric" })
+    : "Week of " + d.toLocaleDateString("en", { month: "short", day: "numeric", year: "numeric" });
 }
-function mapLegend() {
-  const items = [...Object.keys(GROUP_VARS).map((g) => [groupColor(g), "50%", g === "Files & notes" ? "Files and notes" :
-                   g === "This laptop" || g === "Other machines" ? `Session on ${g.toLowerCase()}` : `${g} chat`]),
-                 [cssVar("--neutral"), "2px", "Code module or mentioned file"]];
-  $("#m-legend").replaceChildren(...items.map(([c, r, label]) => el("li", {}, el("i", { style: `background:${c};border-radius:${r}` }), label)));
-}
-async function drawMap(name) {
-  stopPlay();
-  MAP = await api("/v1/console/project-map?name=" + encodeURIComponent(name));
-  MAP.byId = Object.fromEntries(MAP.nodes.map((n) => [n.id, n]));
-  MAP.adj = {};
-  for (const e of MAP.edges) {
-    (MAP.adj[e.source] ||= []).push([e.target, e.relation]);
-    (MAP.adj[e.target] ||= []).push([e.source, e.relation]);
-  }
-  selected = null;
-  nowFrac = 1;
-  $("#m-time").value = 1000;
-  const shown = MAP.documents_shown < MAP.documents_total ? ` (an even sample of ${MAP.documents_shown} across time)` : "";
-  $("#m-info").textContent = `${name}: ${fmt(MAP.documents_total)} documents${shown}. Hover a dot for its name, click it to see ` +
-    "what it is linked to. Drag the slider or press play to watch the memory grow.";
-  renderMap();
-  clearDetail();
-}
-function renderMap() {
-  if (!MAP) return;
-  const box = $("#cy"), W = Math.max(480, box.clientWidth), PAD = { l: 170, r: 24, t: 18, b: 34 };
-  const nodes = MAP.nodes.filter((n) => n.type !== "project");
-  let t0 = Math.min(...nodes.map((n) => tms(n.when))), t1 = Math.max(...nodes.map((n) => tms(n.when)));
-  if (!isFinite(t0)) { box.replaceChildren(el("p", { class: "muted", style: "padding:20px" }, "Nothing to show for this project.")); return; }
-  if (t1 - t0 < 2 * DAY) { t0 -= DAY; t1 += DAY; }
-  MAP.t0 = t0; MAP.t1 = t1;
-  const iw = W - PAD.l - PAD.r, x = (t) => PAD.l + ((t - t0) / (t1 - t0)) * iw;
-  // Lanes: height grows with how many items share a moment (beeswarm stacking).
-  const lanes = LANES.filter(([type]) => nodes.some((n) => n.type === type));
-  const placed = {}, laneTop = {}, R = 5, GAP = 2 * R + 2;
-  let y = PAD.t;
-  for (const [type] of lanes) {
-    const items = nodes.filter((n) => n.type === type).sort((a, b) => tms(a.when) - tms(b.when));
-    const cols = [];   // occupied y offsets near each x
-    let maxOff = 0;
-    for (const n of items) {
-      const px = x(tms(n.when));
-      let k = 0;
-      const used = cols.filter((c) => Math.abs(c.x - px) < GAP).map((c) => c.k);
-      while (used.includes(k)) k++;
-      cols.push({ x: px, k });
-      const off = (k % 2 ? 1 : -1) * Math.ceil(k / 2) * GAP;
-      maxOff = Math.max(maxOff, Math.abs(off));
-      placed[n.id] = { x: px, off };
-    }
-    const h = Math.min(220, Math.max(46, 2 * maxOff + 3 * R));
-    laneTop[type] = { y, h };
-    for (const n of items) placed[n.id].y = y + h / 2 + Math.max(-h / 2 + R, Math.min(h / 2 - R, placed[n.id].off));
-    y += h + 10;
-  }
-  const H = y + PAD.b;
-  MAP.placed = placed;
-  const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, height: H, role: "img", "aria-label": "Timeline of what the memory learned" });
-  // lane bands + labels
-  lanes.forEach(([type, label], i) => {
-    const { y: ly, h } = laneTop[type];
-    svg.append(s("rect", { x: PAD.l, y: ly, width: iw, height: h, rx: 8, fill: i % 2 ? "transparent" : cssVar("--bg") }));
-    svg.append(s("text", { x: PAD.l - 12, y: ly + h / 2 + 4, "text-anchor": "end", class: "plabel" }, label));
-  });
-  // time axis
-  const span = t1 - t0, step = span > 400 * DAY ? "month" : span > 60 * DAY ? "month" : span > 14 * DAY ? "week" : "day";
-  const ticks = [];
-  const d = new Date(t0); d.setUTCHours(0, 0, 0, 0);
-  if (step === "month") d.setUTCDate(1);
-  while (d.getTime() <= t1) {
-    if (d.getTime() >= t0) ticks.push(d.getTime());
-    if (step === "month") d.setUTCMonth(d.getUTCMonth() + (span > 400 * DAY ? 2 : 1));
-    else d.setUTCDate(d.getUTCDate() + (step === "week" ? 7 : 1));
-  }
-  const axis = s("g", { class: "grid" });
-  for (const t of ticks) {
-    axis.append(s("line", { x1: x(t), x2: x(t), y1: PAD.t, y2: H - PAD.b }));
-    svg.append(s("text", { x: x(t), y: H - 12, "text-anchor": "middle" },
-      new Date(t).toLocaleDateString("en", step === "month" ? { month: "short", year: "2-digit" } : { month: "short", day: "numeric" })));
-  }
-  svg.prepend(axis);
-  const links = s("g", { class: "links" });
-  svg.append(links);
-  // dots
-  for (const n of nodes) {
-    const p = placed[n.id];
-    const shape = n.type === "module" || n.type === "mentioned file"
-      ? s("rect", { x: p.x - R + 0.5, y: p.y - R + 0.5, width: 2 * R - 1, height: 2 * R - 1, rx: 2, transform: `rotate(45 ${p.x} ${p.y})` })
-      : s("circle", { cx: p.x, cy: p.y, r: R });
-    shape.setAttribute("fill", nodeColor(n));
-    shape.setAttribute("stroke", cssVar("--panel"));
-    shape.setAttribute("stroke-width", 2);
-    shape.setAttribute("class", "dot");
-    shape.setAttribute("tabindex", 0);
-    shape.dataset.id = n.id;
-    const when = new Date(tms(n.when)).toLocaleDateString("en", { year: "numeric", month: "short", day: "numeric" });
-    const tipIt = (e) => showTip(e, when, [[nodeColor(n), "", `${TYPE_WORDS[n.type]}: ${n.label}`]]);
-    shape.addEventListener("pointermove", tipIt); shape.addEventListener("focus", tipIt);
-    shape.addEventListener("pointerleave", hideTip); shape.addEventListener("blur", hideTip);
-    shape.addEventListener("click", () => select(n.id));
-    shape.addEventListener("keydown", (e) => (e.key === "Enter" || e.key === " ") && select(n.id));
-    svg.append(shape);
-  }
-  // the "now" line
-  const nx = PAD.l + nowFrac * iw;
-  svg.append(s("line", { id: "nowline", x1: nx, x2: nx, y1: PAD.t - 6, y2: H - PAD.b, stroke: cssVar("--accent"), "stroke-width": 2 }));
-  box.replaceChildren(svg);
-  MAP.svg = svg; MAP.links = links; MAP.x = x; MAP.iw = iw; MAP.PAD = PAD;
-  applyTime();
-  if (selected) select(selected, true);
-}
-function applyTime() {
-  if (!MAP || !MAP.svg) return;
-  const t = MAP.t0 + nowFrac * (MAP.t1 - MAP.t0);
-  let visible = 0;
-  MAP.svg.querySelectorAll(".dot").forEach((d) => {
-    const later = tms(MAP.byId[d.dataset.id].when) > t + 60e3;
-    d.style.opacity = later ? 0.08 : "";
-    if (!later) visible++;
-  });
-  const nx = MAP.PAD.l + nowFrac * MAP.iw, line = MAP.svg.querySelector("#nowline");
-  line.setAttribute("x1", nx); line.setAttribute("x2", nx);
-  line.style.display = nowFrac >= 1 ? "none" : "";
-  const day = new Date(t).toLocaleDateString("en", { year: "numeric", month: "short", day: "numeric" });
-  $("#m-date").textContent = `${day} · ${fmt(visible)} known`;
-  $("#m-time").setAttribute("aria-valuetext", `${day}: ${visible} items known`);
-}
-$("#m-time").addEventListener("input", (e) => { stopPlay(); nowFrac = Number(e.target.value) / 1000; applyTime(); });
-function stopPlay() { if (playing) { clearInterval(playing); playing = null; $("#m-play").textContent = "▶ Play history"; } }
-$("#m-play").addEventListener("click", () => {
-  if (playing) return stopPlay();
-  if (REDUCED) { nowFrac = 1; $("#m-time").value = 1000; applyTime(); return; }
-  if (nowFrac >= 1) nowFrac = 0;
-  $("#m-play").textContent = "❚❚ Pause";
-  playing = setInterval(() => {   // explanatory animation: about 8 seconds start to end
-    nowFrac = Math.min(1, nowFrac + 0.0125);
-    $("#m-time").value = Math.round(nowFrac * 1000);
-    applyTime();
-    if (nowFrac >= 1) stopPlay();
-  }, 100);
-});
-function select(id, keep = false) {
-  selected = id;
-  const n = MAP.byId[id], p = MAP.placed[id];
-  const nb = (MAP.adj[id] || []).filter(([o]) => MAP.placed[o]);
-  const near = new Set([id, ...nb.map(([o]) => o)]);
-  MAP.svg.querySelectorAll(".dot").forEach((d) => d.classList.toggle("faded", !near.has(d.dataset.id)));
-  MAP.links.replaceChildren(...nb.map(([o]) => {
-    const q = MAP.placed[o], mx = (p.x + q.x) / 2, my = Math.min(p.y, q.y) - 24;
-    return s("path", { d: `M${p.x},${p.y} Q${mx},${my} ${q.x},${q.y}`, fill: "none", stroke: cssVar("--accent"),
-                       "stroke-width": 1.5, opacity: 0.55 });
+async function loadProjects() {
+  PJ = await api("/v1/console/projects");
+  const box = $("#p-chips");
+  const top = PJ.slice(0, 7), rest = PJ.slice(7);
+  box.replaceChildren(el("span", { class: "muted small" }, "Project"), ...top.map((p) => {
+    const b = el("button", { type: "button", "data-project": p.project }, p.project);
+    b.addEventListener("click", () => openProject(p.project));
+    return b;
   }));
-  if (!keep) detail(n, nb);
+  if (rest.length) {
+    const sel = el("select", { "aria-label": "More projects" }, el("option", { value: "" }, `${rest.length} more…`),
+                   ...rest.map((p) => el("option", { value: p.project }, p.project)));
+    sel.addEventListener("change", () => sel.value && openProject(sel.value));
+    box.append(sel);
+  }
+  if (!ST && PJ.length) openProject(PJ[0].project);
 }
-function clearDetail() {
-  selected = null;
-  if (MAP && MAP.svg) { MAP.svg.querySelectorAll(".dot").forEach((d) => d.classList.remove("faded")); MAP.links.replaceChildren(); }
-  $("#m-side").replaceChildren(el("h3", {}, "How to read this"), $("#m-legend"),
-    el("p", { class: "small" }, "Left to right is time. Each row is one kind of thing the memory knows."),
-    el("p", { class: "muted small" }, "Click a dot to see what it is, when the memory first saw it, and what it is linked to " +
-      "(a session to the files it talked about, a file to the code modules it defines)."));
+async function openProject(name) {
+  if (!PJ) await loadProjects();
+  ST = await api("/v1/console/project-story?name=" + encodeURIComponent(name));
+  document.querySelectorAll("#p-chips button").forEach((b) => b.classList.toggle("on", b.dataset.project === name));
+  const sel = $("#p-chips select");
+  if (sel) sel.value = PJ.slice(7).some((p) => p.project === name) ? name : "";
+  const busy = [...ST.columns].reverse().find((c) => c.total > 0);
+  pick = busy ? { bucket: busy.t } : null;
+  renderStory();
 }
-function detail(n, nb) {
-  const when = new Date(tms(n.when)).toLocaleString("en", { dateStyle: "medium", timeStyle: "short" });
-  const REL = { "part of": "belongs to", defines: "defines", mentions: "talks about", imports: "imports" };
-  const list = el("ul");
-  nb.slice(0, 20).forEach(([o, rel]) => {
-    const m = MAP.byId[o];
-    const b = el("button", {}, m.label);
-    b.addEventListener("click", () => select(o));
-    list.append(el("li", {}, el("span", { class: "muted small" }, `${REL[rel] || rel} · ${TYPE_WORDS[m.type] || m.type}: `), b));
+function projectStory() {
+  const c = ST.counts, kids = [el("b", {}, ST.project)];
+  const parts = [[c.sessions, "coding session"], [c.chats, "AI chat"], [c.files, "file or note", "files and notes"]]
+    .filter(([n]) => n > 0).map(([n, one, many]) => el("b", {}, `${fmt(n)} ${n === 1 ? one : many || one + "s"}`));
+  kids.push(ST.first ? ` started on ${longDate(ST.first)}. Since then: ` : ": ");
+  parts.forEach((p, i) => kids.push(p, i < parts.length - 2 ? ", " : i === parts.length - 2 ? " and " : ". "));
+  const busiest = ST.columns.reduce((a, b) => (b.total > (a ? a.total : 0) ? b : a), null);
+  if (busiest && busiest.total > 1)
+    kids.push(`The busiest ${ST.bucket} was ${ST.bucket === "week" ? "the week of " : ""}`,
+              new Date(busiest.t + "T00:00:00").toLocaleDateString("en", ST.bucket === "week" ? { month: "short", day: "numeric", year: "numeric" } : { month: "long", year: "numeric" }),
+              ` (${items(busiest.total)}). `);
+  const most = [...ST.files].sort((a, b) => b.items - a.items)[0];
+  if (most) kids.push("The file worked on most is ", el("code", {}, shortPath(most.path)), ` (named in ${items(most.items)}).`);
+  $("#p-story").replaceChildren(...kids);
+}
+function renderStory() {
+  if (!ST || $("#tab-projects").hidden) return;
+  projectStory();
+  $("#p-when-sub").textContent = `Sessions and chats per ${ST.bucket}. Click a ${ST.bucket} to list what happened in it.`;
+  document.querySelectorAll(".bucket-word").forEach((w) => (w.textContent = ST.bucket));
+  legend("#p-legend", ST.groups);
+  stackedColumns("#p-activity", ST.columns, ST.groups, ST.bucket, {
+    height: 150, label: `Sessions and chats per ${ST.bucket}`, selected: pick && pick.bucket,
+    onPick: (t) => { pick = { bucket: t }; renderStory(); } });
+  $("#p-qlegend").replaceChildren(...QLEVELS.map(([lv, label]) => el("span", {},
+    el("i", { style: `background:${cssVar("--q" + lv)};width:${7 + lv * 2}px;height:${7 + lv * 2}px` }), label)),
+    el("span", {}, el("i", { style: `background:${cssVar("--text")};border-radius:50%;width:6px;height:6px` }), "first time it came up"));
+  fileMatrix("#p-matrix");
+  table("#pm-table", ["File", "First", "Last", "Sessions and chats"],
+        ST.files.map((f) => [f.path, bucketLabel(f.first, ST.bucket), bucketLabel(f.last, ST.bucket), fmt(f.items)]));
+  sideList();
+}
+function fileMatrix(target) {
+  const box = $(target), files = ST.files, cols = ST.columns;
+  if (!files.length) {
+    box.replaceChildren(el("p", { class: "muted small" }, "No repository files are named in this project's sessions or chats, " +
+      "so there is no file grid. The list carries the story."));
+    return;
+  }
+  const W = Math.max(480, box.clientWidth), LAB = Math.min(230, Math.round(W * 0.3)), ROW = 28, TOP = 22;
+  const cw = Math.min(48, (W - LAB - 6) / cols.length), H = TOP + files.length * ROW + 4, full = Math.min(cw - 2, ROW - 6);
+  const right = LAB + cols.length * cw;
+  const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, height: H, role: "img", "aria-label": "Which files were worked on in which weeks" });
+  const ci = Object.fromEntries(cols.map((c, i) => [c.t, i]));
+  const cx = (i) => LAB + i * cw + cw / 2;
+  const every = Math.ceil(64 / cw);
+  cols.forEach((c, i) => { if (i % every === 0) svg.append(s("text", { x: cx(i), y: 13, "text-anchor": "middle" }, bucketLabel(c.t, ST.bucket))); });
+  if (pick && pick.bucket in ci)
+    svg.append(s("rect", { x: LAB + ci[pick.bucket] * cw + 1, y: TOP - 4, width: Math.max(2, cw - 2), height: files.length * ROW + 6, rx: 6, fill: cssVar("--soft") }));
+  files.forEach((f, r) => {
+    const y = TOP + r * ROW + ROW / 2, on = pick && pick.file === f.path;
+    if (on) svg.append(s("rect", { x: 0, y: y - ROW / 2 + 1, width: right, height: ROW - 2, rx: 6, fill: cssVar("--soft") }));
+    const label = s("text", { x: LAB - 12, y: y + 4, "text-anchor": "end", class: "plabel rowlabel", tabindex: 0 },
+                    s("title", {}, `${f.path}: click to list the sessions and chats that named it`), shortPath(f.path));
+    const pickFile = () => { pick = { file: f.path }; renderStory(); };
+    label.addEventListener("click", pickFile);
+    label.addEventListener("keydown", (e) => (e.key === "Enter" || e.key === " ") && pickFile());
+    svg.append(s("line", { x1: LAB, x2: right, y1: y, y2: y, stroke: cssVar("--grid") }), label);
+    for (const [t, n] of Object.entries(f.cells)) {
+      const i = ci[t], lv = Math.min(4, n), sz = Math.max(4, full * (0.45 + 0.1375 * lv));
+      const cell = s("rect", { x: cx(i) - sz / 2, y: y - sz / 2, width: sz, height: sz, rx: Math.min(4, sz / 3), fill: cssVar("--q" + lv), class: "cell" });
+      const tipIt = (e) => showTip(e, weekWords(t, ST.bucket), [[cssVar("--q" + lv), fmt(n), `session${n === 1 ? "" : "s"} or chat${n === 1 ? "" : "s"} named ${shortPath(f.path)}`]]);
+      cell.addEventListener("pointermove", tipIt);
+      cell.addEventListener("pointerleave", hideTip);
+      cell.addEventListener("click", () => { pick = { bucket: t }; renderStory(); });
+      svg.append(cell);
+    }
+    svg.append(s("circle", { cx: cx(ci[f.first]), cy: y, r: 2.5, fill: cssVar("--text"), "pointer-events": "none" }));
   });
-  const back = el("button", { class: "link" }, "Back to the legend");
-  back.addEventListener("click", clearDetail);
-  $("#m-side").replaceChildren(el("div", { class: "kind" }, TYPE_WORDS[n.type] || n.type), el("h3", {}, n.label),
-    el("p", { class: "small" }, (n.type === "module" || n.type === "mentioned file" ? "First appeared " : "") + when),
-    n.group ? el("p", { class: "small muted" }, `Source: ${n.group}`) : "",
-    n.detail ? el("p", { class: "path" }, n.detail) : "",
-    el("p", { class: "small" }, el("b", {}, fmt(nb.length)), nb.length === 1 ? " linked item" : " linked items",
-       nb.length > 20 ? " (first 20 shown)" : ""), list, back);
+  box.replaceChildren(svg);
+}
+function sideList() {
+  const side = $("#p-side");
+  if (!pick) { side.replaceChildren(el("h2", {}, "Nothing dated yet"), el("p", { class: "sub" }, "This project has files and notes but no sessions or chats.")); return; }
+  const list0 = pick.file ? ST.items.filter((it) => it.files.includes(pick.file)) : ST.items.filter((it) => it.bucket === pick.bucket);
+  const title = pick.file ? shortPath(pick.file) : weekWords(pick.bucket, ST.bucket);
+  const sub = pick.file ? `${cap(items(list0.length))} named ${pick.file}, newest first.`
+    : `${cap(items(list0.length))}. The dot shows where each happened; tags are the files it touched (click one to follow it).`;
+  const list = el("div", { class: "items" });
+  for (const it of list0.slice(0, 200)) {
+    const tags = el("div", { class: "tags" }, ...it.files.map((f) => {
+      const t = el("button", { type: "button", class: "tag", title: f }, shortPath(f));
+      t.addEventListener("click", () => { pick = { file: f }; renderStory(); });
+      return t;
+    }));
+    list.append(el("div", { class: "item" }, el("time", {}, bucketLabel(it.when.slice(0, 10), "day")),
+      el("i", { class: "dot", style: `background:${groupColor(it.group)}`, title: it.group }),
+      el("div", {}, el("div", {}, it.title), it.files.length ? tags : "")));
+  }
+  if (!list0.length) list.append(el("p", { class: "muted small" }, pick.file ? "None." : `Nothing happened in this ${ST.bucket}. Pick another column.`));
+  const kids = [el("h2", {}, title), el("p", { class: "sub" }, sub)];
+  if (pick.file) {
+    const back = el("button", { class: "link", type: "button" }, "Back to the latest week");
+    back.addEventListener("click", () => { const busy = [...ST.columns].reverse().find((c) => c.total > 0); pick = busy ? { bucket: busy.t } : null; renderStory(); });
+    kids.push(back);
+  }
+  side.replaceChildren(...kids, list);
 }
 
 // ---- activity --------------------------------------------------------------------

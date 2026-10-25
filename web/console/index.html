@@ -12,7 +12,7 @@
   <span class="brand">Your memory</span>
   <nav class="tabs" aria-label="Sections">
     <button data-tab="overview" class="active">Overview <kbd>1</kbd></button>
-    <button data-tab="map">Knowledge map <kbd>2</kbd></button>
+    <button data-tab="projects">Projects <kbd>2</kbd></button>
     <button data-tab="activity">Activity <kbd>3</kbd></button>
     <button data-tab="search">Search <kbd>4</kbd></button>
     <button data-tab="public">Public site <kbd>5</kbd></button>
@@ -38,57 +38,67 @@
     <p class="story" id="story">Loading…</p>
     <div class="kpis" id="kpis"></div>
 
-    <article class="card">
-      <header><h2>When things happened</h2>
-        <p class="sub">Each column counts the coding sessions and AI chats from that time, by where they came from. (Files and
-          notes have no date of their own, so they appear in the project chart below instead.)</p></header>
-      <div class="legend" id="tl-legend"></div>
-      <div class="chart" id="tl-chart"></div>
-      <button class="link" data-table="tl">Show as table</button><div class="tablebox" id="tl-table" hidden></div>
-    </article>
+    <div class="split">
+      <article class="card">
+        <header><h2>When you worked</h2>
+          <p class="sub">Coding sessions and AI chats over time, by where they happened. Files and notes have no date of their
+            own, so they are left out here.</p></header>
+        <div class="legend" id="tl-legend"></div>
+        <div class="chart" id="tl-chart"></div>
+        <button class="link" data-table="tl">Show as table</button><div class="tablebox" id="tl-table" hidden></div>
+      </article>
+      <article class="card">
+        <header><h2>What you touched last</h2>
+          <p class="sub">Each project's most recent session or chat. Click one to open its story.</p></header>
+        <div class="latest" id="latest"></div>
+      </article>
+    </div>
 
     <div class="two">
       <article class="card">
         <header><h2>Where it comes from</h2>
-          <p class="sub">Documents per project, split by source. Longest bar = the project the memory knows most about.</p></header>
+          <p class="sub">Everything remembered, per project and source. The longest bar is the project the memory knows most about.</p></header>
         <div class="chart" id="pj-chart"></div>
         <button class="link" data-table="pj">Show as table</button><div class="tablebox" id="pj-table" hidden></div>
       </article>
       <article class="card">
         <header><h2>Kept up to date</h2>
-          <p class="sub">When a file or session changes, its old passages are retired (kept as history, not deleted) and the
-            new version takes over. Columns count passages retired.</p></header>
-        <div class="chart" id="rt-chart"></div>
-        <button class="link" data-table="rt">Show as table</button><div class="tablebox" id="rt-table" hidden></div>
+          <p class="sub">When a file or session changes, its old passages are retired (kept, not deleted) and the new version takes over.</p></header>
+        <p class="sentence" id="kept"></p>
+        <button class="link" data-table="rt">Show by period</button><div class="tablebox" id="rt-table" hidden></div>
       </article>
     </div>
 
     <div class="two">
+      <article class="card"><header><h2>Health</h2><p class="sub">Plain answers to "is it working?"</p></header>
+        <table id="health" class="kv"></table></article>
       <article class="card"><header><h2>Machines</h2><p class="sub">Where sessions were recorded.</p></header>
         <table id="machines"></table></article>
-      <article class="card"><header><h2>Health</h2><p class="sub">The always-on indexer and its safeguards.</p></header>
-        <table id="health"></table></article>
     </div>
   </section>
 
-  <!-- Knowledge map -->
-  <section id="tab-map" class="tab" hidden>
-    <div class="filters">
-      <label class="muted small" for="m-project">Project</label>
-      <select id="m-project"></select>
-      <button id="m-play" class="primary" type="button">▶ Play history</button>
-      <input id="m-time" type="range" min="0" max="1000" value="1000" aria-label="Show the map as of this date">
-      <span id="m-date" class="when"></span>
-    </div>
-    <p class="sub" id="m-info">Pick a project. Each dot is something the memory knows; lines show how they relate.
-      Drag the slider (or press play) to see the map as it was on any date.</p>
-    <div class="mapwrap">
-      <div id="cy" class="timeline"></div>
-      <aside class="side" id="m-side">
-        <h3>How to read this</h3>
-        <ul class="key" id="m-legend"></ul>
-        <p class="muted small">Click any dot for details.</p>
-      </aside>
+  <!-- Projects -->
+  <section id="tab-projects" class="tab" hidden>
+    <div class="filters" id="p-chips" role="group" aria-label="Project"></div>
+    <p class="story" id="p-story">Loading…</p>
+    <div class="split">
+      <div>
+        <article class="card">
+          <header><h2>When</h2><p class="sub" id="p-when-sub"></p></header>
+          <div class="legend" id="p-legend"></div>
+          <div class="chart" id="p-activity"></div>
+        </article>
+        <article class="card">
+          <header><h2>Which files, when</h2>
+            <p class="sub">Rows are the files this project's sessions and chats worked on most, in the order they first came up.
+              A square means sessions or chats in that <span class="bucket-word">week</span> named the file; bigger and darker means
+              more of them. Click a square for that <span class="bucket-word">week</span>, or a file name for every item that named it.</p></header>
+          <div class="legend" id="p-qlegend"></div>
+          <div class="chart" id="p-matrix"></div>
+          <button class="link" data-table="pm">Show as table</button><div class="tablebox" id="pm-table" hidden></div>
+        </article>
+      </div>
+      <aside class="card side" id="p-side" aria-live="polite"></aside>
     </div>
   </section>
 

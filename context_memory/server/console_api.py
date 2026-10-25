@@ -153,6 +153,21 @@ def _group(kind: str, path: str, meta: dict) -> str:
     return "Files & notes"
 
 
+def _untitled(svc, doc_id: str, path: str) -> str:
+    """A label for a document without a title (e.g. a session whose tool recorded
+    none): the first line of its first user message, else of its first passage."""
+    row = svc.sqlite.conn.execute("SELECT text FROM chunks WHERE doc_id = ? AND valid_to IS NULL "
+                                  "ORDER BY ordinal LIMIT 1", (doc_id,)).fetchone()
+    text = row[0] if row else ""
+    if "**User:**" in text:
+        text = text.split("**User:**", 1)[1]
+    for line in text.splitlines():
+        line = line.strip().lstrip("#").strip()
+        if line:
+            return line[:100] + ("…" if len(line) > 100 else "")
+    return path.replace("\\", "/").rsplit("/", 1)[-1]
+
+
 def _docs(svc) -> list[dict]:
     """Every document with a current passage: id, project, title, kind, group, when."""
     out = []
@@ -160,7 +175,9 @@ def _docs(svc) -> list[dict]:
             "SELECT d.doc_id, d.project, d.kind, d.path, d.title, d.meta, d.created_at FROM documents d "
             "WHERE EXISTS (SELECT 1 FROM chunks c WHERE c.doc_id = d.doc_id AND c.valid_to IS NULL)"):
         m = json.loads(meta or "{}")
-        out.append({"id": doc_id, "project": project, "kind": kind, "path": path, "title": title or path,
+        if not title or title == path or title.endswith(".jsonl"):
+            title = _untitled(svc, doc_id, path or "")
+        out.append({"id": doc_id, "project": project, "kind": kind, "path": path, "title": title,
                     "group": _group(kind, path, m), "when": _when(m, created)})
     return out
 
@@ -203,7 +220,25 @@ def summary(svc, home: Path, days: int = 30) -> dict:
     heartbeat = json.loads(hb_file.read_text()) if hb_file.exists() else {}
     retired = q("SELECT COUNT(*) FROM chunks WHERE valid_to IS NOT NULL" + (" AND valid_to >= ?" if since else ""),
                 (since,) if since else ()).fetchone()[0]
+    retired_top = q("SELECT d.project, COUNT(*) FROM chunks c JOIN documents d ON d.doc_id = c.doc_id "
+                    "WHERE c.valid_to IS NOT NULL" + (" AND c.valid_to >= ?" if since else "") +
+                    " GROUP BY d.project ORDER BY 2 DESC LIMIT 1", (since,) if since else ()).fetchone()
+    worked = [d for d in in_period if d["group"] != "Files & notes"]
+    worked_before = [d for d in before if d["group"] != "Files & notes"]
+    per_project: dict[str, int] = {}
+    for d in worked:
+        per_project[d["project"]] = per_project.get(d["project"], 0) + 1
+    doc_links = q("SELECT COUNT(*) FROM edges e JOIN entities s ON s.entity_id = e.src WHERE e.valid_to IS NULL "
+                  "AND s.type = 'document' AND e.relation IN ('mentions', 'defines')").fetchone()[0]
     return {
+        "worked_in_period": len(worked), "worked_previous": len(worked_before),
+        "projects_in_period": len(per_project),
+        "top_project": max(per_project, key=per_project.get) if per_project else None,
+        "top_project_share": round(max(per_project.values()) / len(worked), 2) if worked else 0,
+        "links_from_documents": doc_links,
+        "retired_top_project": retired_top[0] if retired_top else None,
+        "interval_seconds": svc.settings.daemon_interval_seconds,
+        "search_k": svc.settings.default_search_k,
         "days": days,
         "documents": len(docs), "documents_in_period": len(in_period), "documents_previous": len(before),
         "passages": q("SELECT COUNT(*) FROM chunks WHERE valid_to IS NULL").fetchone()[0],
@@ -248,75 +283,74 @@ def projects_breakdown(svc) -> list[dict]:
         p[d["group"]] += 1
         p["total"] += 1
         p["first"], p["last"] = min(p["first"], d["when"]), max(p["last"], d["when"])
+        # Latest item: a session or chat when there is one (files have no date of their own).
+        rank = (d["group"] != "Files & notes", d["when"])
+        if rank > p.get("_rank", (False, "")):
+            p.update(_rank=rank, latest_title=d["title"][:140], latest_group=d["group"], latest_when=d["when"])
+    for p in by.values():
+        p.pop("_rank", None)
     return sorted(by.values(), key=lambda p: p["last"], reverse=True)
 
 
-def project_map(svc, project: str, max_docs: int = 80, max_refs: int = 60) -> dict:
-    """A project's knowledge graph with a date on every node, for a time slider:
-    project -> documents (sessions, chats, files) -> code modules they define, and
-    the repository files that sessions mention. Large projects are sampled evenly
-    across time so early history stays visible."""
+def _span_buckets(first: str, last: str) -> tuple[str, list[str]]:
+    """Every week (or month, past ~13 months) from first to last, oldest first."""
+    from datetime import date, timedelta
+    a, b = date.fromisoformat(first[:10]), date.fromisoformat(last[:10])
+    bucket = "week" if (b - a).days <= 400 else "month"
+    keys, k = [], date.fromisoformat(_bucket_key(first, bucket))
+    while k.isoformat() <= _bucket_key(last, bucket):
+        keys.append(k.isoformat())
+        k = k + timedelta(days=7) if bucket == "week" else (k.replace(day=28) + timedelta(days=4)).replace(day=1)
+    return bucket, keys
+
+
+def project_story(svc, project: str, max_files: int = 15, max_files_per_item: int = 6) -> dict:
+    """One project over time, for reading rather than exploring: activity per week
+    by source, the repository files its sessions and chats worked on (which, and in
+    which weeks), and a dated list of every session and chat with the files each
+    touched. Files and notes have no date of their own, so they are counted only."""
     q = svc.sqlite.conn.execute
-    docs = sorted((d for d in _docs(svc) if d["project"] == project), key=lambda d: d["when"])
-    total = len(docs)
-    if total > max_docs:
-        step = total / max_docs
-        docs = [docs[int(i * step)] for i in range(max_docs)]
-    nodes: dict[str, dict] = {f"p:{project}": {"id": f"p:{project}", "label": project, "type": "project",
-                                               "when": docs[0]["when"] if docs else None}}
-    edges: list[dict] = []
-    by_path = {d["path"]: d for d in docs}
-    ent = {}
-    if by_path:
-        marks = ", ".join("?" * len(by_path))
-        ent = {name: eid for eid, name in q(
-            f"SELECT entity_id, name FROM entities WHERE type = 'document' AND name IN ({marks})", list(by_path))}
-    for path, eid in ent.items():
-        d = by_path[path]
-        kind = "session" if d["group"] in ("This laptop", "Other machines") else \
-               "chat" if d["kind"] == "chat" else "file"
-        did = f"d:{d['id']}"
-        nodes[did] = {"id": did, "label": d["title"][:60], "type": kind, "when": d["when"], "group": d["group"],
-                      "detail": path}
-        edges.append({"source": did, "target": f"p:{project}", "relation": "part of"})
-    if ent:
-        marks = ", ".join("?" * len(ent))
-        rev = {eid: path for path, eid in ent.items()}
-        refs: dict[str, list] = {}
-        for src, rel, dst_id, dst_name, dst_type in q(
-                f"SELECT e.src, e.relation, e.dst, x.name, x.type FROM edges e JOIN entities x ON x.entity_id = e.dst "
-                f"WHERE e.valid_to IS NULL AND e.relation IN ('defines', 'mentions') AND e.src IN ({marks})",
-                list(ent.values())):
-            d = by_path[rev[src]]
-            if rel == "defines" and dst_type == "module":
-                mid = f"m:{dst_name}"
-                n = nodes.setdefault(mid, {"id": mid, "label": dst_name.split(".")[-1], "type": "module",
-                                           "when": d["when"], "detail": dst_name, "eid": dst_id})
-                n["when"] = min(n["when"], d["when"])
-                edges.append({"source": f"d:{d['id']}", "target": mid, "relation": "defines"})
-            elif rel == "mentions":
-                refs.setdefault(dst_name, []).append(d)
-        # The repository files mentioned most often (by distinct documents).
-        for name, ds in sorted(refs.items(), key=lambda kv: -len({x["id"] for x in kv[1]}))[:max_refs]:
-            rid = f"f:{name}"
-            nodes[rid] = {"id": rid, "label": name.split("/")[-1], "type": "mentioned file",
-                          "when": min(x["when"] for x in ds), "detail": name}
-            for x in {x["id"]: x for x in ds}.values():
-                edges.append({"source": f"d:{x['id']}", "target": rid, "relation": "mentions"})
-        # Imports between modules shown.
-        mods = {n["eid"]: nid for nid, n in nodes.items() if n["type"] == "module"}
-        if mods:
-            mm = ", ".join("?" * len(mods))
-            for src, dst in q(f"SELECT src, dst FROM edges WHERE valid_to IS NULL AND relation = 'imports' "
-                              f"AND src IN ({mm}) AND dst IN ({mm})", list(mods) * 2):
-                if src != dst:
-                    edges.append({"source": mods[src], "target": mods[dst], "relation": "imports"})
-    for n in nodes.values():
-        n.pop("eid", None)
-    whens = [n["when"] for n in nodes.values() if n.get("when")]
-    return {"project": project, "documents_total": total, "documents_shown": len(docs),
-            "nodes": list(nodes.values()), "edges": edges,
-            "range": [min(whens), max(whens)] if whens else None}
+    docs = [d for d in _docs(svc) if d["project"] == project]
+    dated = sorted((d for d in docs if d["group"] != "Files & notes"), key=lambda d: d["when"])
+    counts = {"sessions": sum(d["group"] in ("This laptop", "Other machines") for d in dated),
+              "chats": sum(d["group"] in ("claude.ai", "Perplexity") for d in dated),
+              "files": sum(d["group"] == "Files & notes" for d in docs)}
+    out = {"project": project, "counts": counts, "first": min((d["when"] for d in docs), default=None),
+           "groups": GROUPS[:4], "bucket": "week", "columns": [], "files": [], "items": []}
+    if not dated:
+        return out
+    bucket, cols = _span_buckets(dated[0]["when"], dated[-1]["when"])
+    activity = {k: {g: 0 for g in GROUPS[:4]} for k in cols}
+    for d in dated:
+        d["bucket"] = _bucket_key(d["when"], bucket)
+        activity[d["bucket"]][d["group"]] += 1
+    # Which repository files each dated item mentions (graph "mentions" edges).
+    touched: dict[str, list[str]] = {}
+    by_path = {d["path"]: d for d in dated}
+    paths = list(by_path)
+    for i in range(0, len(paths), 500):
+        part = paths[i:i + 500]
+        marks = ", ".join("?" * len(part))
+        for doc_path, ref in q(
+                f"SELECT s.name, x.name FROM edges e JOIN entities s ON s.entity_id = e.src "
+                f"JOIN entities x ON x.entity_id = e.dst WHERE e.valid_to IS NULL AND e.relation = 'mentions' "
+                f"AND s.type = 'document' AND s.name IN ({marks})", part):
+            touched.setdefault(by_path[doc_path]["id"], []).append(ref)
+    per_file: dict[str, dict[str, int]] = {}
+    for d in dated:
+        for ref in set(touched.get(d["id"], [])):
+            per_file.setdefault(ref, {})
+            per_file[ref][d["bucket"]] = per_file[ref].get(d["bucket"], 0) + 1
+    top = sorted(per_file.items(), key=lambda kv: -sum(kv[1].values()))[:max_files]
+    rank = {name: i for i, (name, _) in enumerate(top)}
+    out.update(bucket=bucket,
+               columns=[{"t": k, **activity[k], "total": sum(activity[k].values())} for k in cols],
+               files=sorted(({"path": name, "first": min(cells), "last": max(cells), "items": sum(cells.values()),
+                              "cells": cells} for name, cells in top), key=lambda f: (f["first"], -f["items"])),
+               items=[{"when": d["when"], "bucket": d["bucket"], "title": d["title"][:140], "group": d["group"],
+                       "files": sorted(set(touched.get(d["id"], [])), key=lambda r: rank.get(r, 1e9))[:max_files_per_item]}
+                      for d in reversed(dated)])
+    return out
 
 
 def activity(svc, n: int = 60) -> list[dict]:

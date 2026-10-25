@@ -302,11 +302,11 @@ def build_app(settings: Settings, embedder: Embedder, service: MemoryService | N
         with lock:
             return _json(console_api.projects_breakdown(svc))
 
-    @mcp.custom_route("/v1/console/project-map", methods=["GET"])
-    async def console_project_map(request: Request):
+    @mcp.custom_route("/v1/console/project-story", methods=["GET"])
+    async def console_project_story(request: Request):
         name = request.query_params.get("name", "")[:200]
         with lock:
-            return _json(console_api.project_map(svc, name))
+            return _json(console_api.project_story(svc, name))
 
     @mcp.custom_route("/v1/console/activity", methods=["GET"])
     async def console_activity(request: Request):
