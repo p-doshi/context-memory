@@ -299,6 +299,36 @@ def process_inbox(svc, inbox: Path, sources) -> dict:
             done.mkdir(exist_ok=True)
             f.replace(done / f"{time.strftime('%Y%m%d-%H%M%S')}-{f.name}")
             summary[f"inbox:{acct.label}:{f.name}"] = _summarize(res)
+    summary.update(process_project_exports(svc, inbox / "claude-projects"))
+    return summary
+
+
+def process_project_exports(svc, root: Path) -> dict:
+    """claude.ai Project knowledge exports dropped into <home>/inbox/claude-projects/<project>/
+    are imported under that memory project, then moved to done/."""
+    from context_memory.ingestion.claude_project import import_project_export, is_project_export
+    from context_memory.util import validate_project
+    summary: dict[str, dict] = {}
+    root.mkdir(parents=True, exist_ok=True)
+    for folder in sorted(p for p in root.iterdir() if p.is_dir()):
+        try:
+            validate_project(folder.name)
+        except ValueError:
+            log.warning("inbox %s: folder name is not a valid project name", folder)
+            continue
+        for f in sorted(folder.glob("*.zip")):
+            try:
+                if not is_project_export(f):
+                    log.warning("inbox %s: not a project export (holds conversations); use the account inbox", f)
+                    continue
+                res = import_project_export(svc, f, folder.name, actor="daemon")
+            except Exception:
+                log.exception("project export import failed: %s", f)
+                continue
+            done = folder / "done"
+            done.mkdir(exist_ok=True)
+            f.replace(done / f"{time.strftime('%Y%m%d-%H%M%S')}-{f.name}")
+            summary[f"project-export:{folder.name}:{f.name}"] = _summarize(res)
     return summary
 
 
