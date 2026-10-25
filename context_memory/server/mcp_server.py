@@ -30,12 +30,14 @@ def _error(e: Exception) -> dict:
 
 
 def build_mcp(get_service: Callable[[], MemoryService], allow_local_ingest: bool = True,
-              actor: str = "mcp", lock=None,
+              actor: str | Callable[[], str] = "mcp", lock=None,
               authorize: Callable[[str], bool] = lambda scope: True) -> MCPServer:
     """Register the memory tools against a service factory. The hub passes
     allow_local_ingest=False (a remote client must not ask the laptop to read
-    laptop paths) and a lock that serialises tool calls on its connection."""
+    laptop paths), a lock that serialises tool calls on its connection, and an
+    actor function naming the calling device for the audit log."""
     mcp = MCPServer("context-memory")
+    name_of = actor if callable(actor) else (lambda: actor)
     guard = lock if lock is not None else contextlib.nullcontext()
 
     def locked(fn):
@@ -62,7 +64,7 @@ def build_mcp(get_service: Callable[[], MemoryService], allow_local_ingest: bool
         try:
             svc = get_service()
             res = svc.memory_search(query, project=project, kinds=kinds, k=k, mode=mode,
-                                    recipient=svc.settings.mcp_recipient, actor=actor)
+                                    recipient=svc.settings.mcp_recipient, actor=name_of())
             return res if detail == "full" else svc.compact(res, query)
         except ValueError as e:
             return _error(e)
@@ -73,7 +75,7 @@ def build_mcp(get_service: Callable[[], MemoryService], allow_local_ingest: bool
         """Full text and provenance for up to 10 hit ids from memory_search."""
         svc = get_service()
         return svc.memory_get(ids, recipient=svc.settings.mcp_recipient,
-                              max_chars=min(max_chars, 20000), actor=actor)
+                              max_chars=min(max_chars, 20000), actor=name_of())
 
     @mcp.tool()
     @locked
@@ -89,7 +91,7 @@ def build_mcp(get_service: Callable[[], MemoryService], allow_local_ingest: bool
             return {"status": "error", "error": "this device is read-only (no 'write' scope)"}
         try:
             return get_service().memory_write(text=text, kind=kind, project=project, title=title,
-                                              source=source, tags=tags, links=links, actor=actor)
+                                              source=source, tags=tags, links=links, actor=name_of())
         except (ValueError, IngressRejected) as e:
             return _error(e)
 
@@ -129,9 +131,9 @@ def build_mcp(get_service: Callable[[], MemoryService], allow_local_ingest: bool
             try:
                 if p.is_dir():
                     results = ingest_markdown_dir(svc, p, project, max_files=min(max_files, 200),
-                                                  actor=actor)
+                                                  actor=name_of())
                     return {"status": "ok", "files": results}
-                return ingest_markdown_file(svc, p, project, actor=actor)
+                return ingest_markdown_file(svc, p, project, actor=name_of())
             except PathNotAllowed as e:
                 svc.sqlite.audit(actor, "ingest", str(p), "denied", {"reason": "path_not_allowed"})
                 return _error(e)

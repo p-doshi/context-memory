@@ -80,6 +80,11 @@ def test_writes_are_refused_and_kill_switch_works(settings, svc, hub_url):
                 "params": {"name": "memory_write", "arguments": {"text": "x", "kind": "note", "project": "p"}}}
         r = c.post("/mcp", json=call, headers=h)
         assert "read-only" in r.text
+        search = {"jsonrpc": "2.0", "id": 3, "method": "tools/call",
+                  "params": {"name": "memory_search", "arguments": {"query": "anything"}}}
+        assert c.post("/mcp", json=search, headers=h).status_code == 200
+        actors = [r["actor"] for r in svc.sqlite.audit_tail(20) if r["action"] == "search"]
+        assert actors and actors[0] == "hub:claude-ai"           # the audit log names the device
         (settings.data_dir.parent / "config").mkdir(exist_ok=True)
         (settings.data_dir.parent / "config" / "connector-disabled").write_text("off")
         assert c.post("/mcp", json=MCP_INIT, headers=auth).status_code == 503

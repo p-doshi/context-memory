@@ -219,7 +219,11 @@ def build_app(settings: Settings, embedder: Embedder, service: MemoryService | N
         dev = current_device.get()
         return dev is not None and scope in device_scopes(dev)
 
-    mcp = build_mcp(lambda: svc, allow_local_ingest=False, actor="hub", lock=lock,
+    def actor() -> str:  # the audit log names the calling device, not just "hub"
+        dev = current_device.get()
+        return f"hub:{dev['name']}" if dev else "hub"
+
+    mcp = build_mcp(lambda: svc, allow_local_ingest=False, actor=actor, lock=lock,
                     authorize=authorize)
     # Load the in-memory vector copy now, not on the first remote search.
     svc.lance._snapshot()
