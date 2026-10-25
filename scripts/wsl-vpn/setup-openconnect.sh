@@ -98,15 +98,24 @@ echo "== 5. dal-vpn command (foreground; the daemon restarts it)"
 rm -f /usr/local/bin/win-browser
 cat > /usr/local/bin/dal-vpn <<EOF
 #!/bin/bash
-# Dal VPN, split tunnel: only 129.173.0.0/16 goes through it. Foreground, so a
-# supervisor (the context-memory daemon) can restart it. Log: /tmp/vpn.log
-# WSLg: Chromium's GPU path renders a blank window and its sandbox stalls the
-# renderer inside the VM; draw in software without the sandbox (the page is
-# Dal's and Microsoft's login only).
+# Dal VPN for this WSL VM. Foreground, so a supervisor (the context-memory
+# daemon) can restart it. Log: /tmp/vpn.log
+#
+# What it took (2026-10-25):
+# - Dal's server rejects the default AnyConnect version 4.7.00136 after login
+#   ("Failed to create session manager entry"); report the Windows client's 5.1.18.314.
+# - WSLg: Chromium's GPU path renders a blank window and its sandbox stalls the
+#   renderer inside the VM; draw in software without the sandbox (the page is
+#   Dal's and Microsoft's login only).
+# - Microsoft's sign-in offers passkeys first, which cannot reach Windows Hello from
+#   here and hang; with WebAuthn disabled it falls back to password + code.
+# - openconnect-sso drops the first argument after "--" (the guide's alias loses its
+#   -b there). Without "--", the patched parser passes unknown options through, so
+#   openconnect's options go in single-token form (--opt=value).
 export QTWEBENGINE_DISABLE_SANDBOX=1 LIBGL_ALWAYS_SOFTWARE=1 QT_QUICK_BACKEND=software
-export QTWEBENGINE_CHROMIUM_FLAGS="--disable-gpu --disable-gpu-compositing --no-sandbox"
-exec "$H/.local/bin/openconnect-sso" --server vpn.its.dal.ca --authgroup DAL -- \\
-  --script "vpn-slice 129.173.0.0/16" --reconnect-timeout 30 --force-dpd 10 >>/tmp/vpn.log 2>&1
+export QTWEBENGINE_CHROMIUM_FLAGS="--disable-gpu --disable-gpu-compositing --no-sandbox --disable-blink-features=WebAuth,WebAuthenticationConditionalUI --disable-features=WebAuthenticationConditionalUI"
+exec "$H/.local/bin/openconnect-sso" --ac-version 5.1.18.314 --server vpn.its.dal.ca --authgroup DAL \\
+  --reconnect-timeout=30 --force-dpd=10 "--script=vpn-slice 129.173.0.0/16" >>/tmp/vpn.log 2>&1
 EOF
 chmod 755 /usr/local/bin/dal-vpn
 as_user "$H/.local/bin/openconnect-sso" --version
