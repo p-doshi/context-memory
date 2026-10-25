@@ -135,6 +135,14 @@ client/           stdlib-only push/pull client and setup scripts for other machi
 
 ## Roadmap
 
-Weeks 1 to 6 follow design §26. The visitor page is served by the local hub today. Public
-hosting (a separate host that holds only an exported public subset, never the local data
-directory) and an optional language-model answerer are open decisions.
+Weeks 1 to 6 follow design §26.
+
+## Public site
+
+`cmh public export` copies the `[public]` projects (code and notes, gated) into a separate
+store; the public node (`cmh public serve`, 127.0.0.1:8787) serves only that copy: a visual
+pipeline, a Disclosure Gate demo, an AG-UI chat answered by a local model (llama.cpp,
+Qwen3-1.7B) behind a jailbreak guard (`cmh public moderation`, `model-off`), and Markdown
+twins plus `/llms.txt` for agents. With `CMH_PUBLIC_ENABLED` the daemon runs the node, the
+model server and a Cloudflare quick tunnel, and pushes the static site with the current
+tunnel address to a site repository for Vercel (`CMH_PUBLIC_SITE_REPO`).
