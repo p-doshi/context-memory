@@ -27,15 +27,18 @@ log = logging.getLogger("cmh.children")
 
 class Child(threading.Thread):
     def __init__(self, name: str, argv: list[str], stop: threading.Event, log_path: Path,
-                 env: dict[str, str] | None = None, fresh_log: bool = False):
+                 env: dict[str, str] | None = None, fresh_log: bool = False,
+                 backoff: tuple[float, float] = (5, 600)):
         super().__init__(name=f"child-{name}", daemon=True)
         self.label, self.argv, self.stop_event, self.log_path = name, argv, stop, log_path
         self.fresh_log = fresh_log  # start each run with an empty log (cloudflared: its URL)
+        self.backoff = backoff      # (first, max) seconds between restarts after quick exits
         self.env = {**os.environ, **(env or {})}
         self.state, self.since, self.pid = "starting", time.time(), None
 
     def run(self) -> None:
-        backoff = 5
+        first, most = self.backoff
+        backoff = first
         while not self.stop_event.is_set():
             started = time.time()
             with open(self.log_path, "wb" if self.fresh_log else "ab") as out:
@@ -53,7 +56,7 @@ class Child(threading.Thread):
                         proc.kill()
             self.state, self.since, self.pid = "down", time.time(), None
             log.warning("%s exited (%s)", self.label, proc.returncode)
-            backoff = 5 if time.time() - started > 300 else min(backoff * 2, 600)
+            backoff = first if time.time() - started > 300 else min(backoff * 2, most)
             self.stop_event.wait(backoff)
 
 
@@ -107,7 +110,10 @@ def tunnel_url(home: Path, since: float = 0) -> str | None:
 def start(settings, stop: threading.Event, secrets_get) -> list[Child]:
     logs = settings.data_dir.parent / "logs"
     logs.mkdir(parents=True, exist_ok=True)
-    children = [Child(name, argv, stop, logs / f"{name}.log", env, fresh_log=(name == "cloudflared"))
+    # The VPN logs in to an external server: retry slowly (rapid sign-ins can get
+    # the address blocked there; seen 2026-10-25).
+    children = [Child(name, argv, stop, logs / f"{name}.log", env, fresh_log=(name == "cloudflared"),
+                      backoff=(120, 1800) if name == "wsl-vpn" else (5, 600))
                 for name, argv, env in plan(settings, secrets_get)]
     for c in children:
         RUNNING[c.label] = c
