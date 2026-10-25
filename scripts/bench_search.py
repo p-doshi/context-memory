@@ -52,7 +52,7 @@ async def run(url: str, token: str, modes: list[str], seed: int) -> list[dict]:
                     await s.call_tool("memory_search", {"query": q, "k": 8, "mode": modes[0]})
                 for q, m in jobs:
                     t0 = time.perf_counter()
-                    r = await s.call_tool("memory_search", {"query": q, "k": 8, "mode": m})
+                    r = await s.call_tool("memory_search", {"query": q, "k": 8, "mode": m, "detail": "full"})
                     wall = (time.perf_counter() - t0) * 1000
                     payload = json.loads(r.content[0].text)
                     rows.append({"mode": m, "client_ms": wall, **{f"server_{k}": v for k, v in

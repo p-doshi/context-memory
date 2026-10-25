@@ -1,0 +1,262 @@
+{
+  "timestamp": "2026-10-25T12:51:02.333096+00:00",
+  "git_commit": "90f9f55",
+  "label": "local-verified",
+  "seed": 20261024,
+  "summary": {
+    "vector": {
+      "client_ms": {
+        "p50": 157.3,
+        "p95": 283.8
+      }
+    },
+    "hybrid": {
+      "client_ms": {
+        "p50": 276.8,
+        "p95": 622.5
+      }
+    }
+  },
+  "rows": [
+    {
+      "mode": "vector",
+      "client_ms": 195.3377999998338
+    },
+    {
+      "mode": "vector",
+      "client_ms": 283.79510000013397
+    },
+    {
+      "mode": "vector",
+      "client_ms": 182.89980000190553
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 411.4399999998568
+    },
+    {
+      "mode": "vector",
+      "client_ms": 156.55390000029
+    },
+    {
+      "mode": "vector",
+      "client_ms": 155.29460000107065
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 374.68579999767826
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 141.95420000032755
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 221.90839999893797
+    },
+    {
+      "mode": "vector",
+      "client_ms": 147.2219999996014
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 220.83049999855575
+    },
+    {
+      "mode": "vector",
+      "client_ms": 139.3458999991708
+    },
+    {
+      "mode": "vector",
+      "client_ms": 164.68620000159717
+    },
+    {
+      "mode": "vector",
+      "client_ms": 137.99930000095628
+    },
+    {
+      "mode": "vector",
+      "client_ms": 157.96409999893513
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 134.5932999975048
+    },
+    {
+      "mode": "vector",
+      "client_ms": 128.95360000038636
+    },
+    {
+      "mode": "vector",
+      "client_ms": 143.8811000007263
+    },
+    {
+      "mode": "vector",
+      "client_ms": 127.64319999769214
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 351.41379999913624
+    },
+    {
+      "mode": "vector",
+      "client_ms": 128.64079999781097
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 434.04000000009546
+    },
+    {
+      "mode": "vector",
+      "client_ms": 161.84620000058203
+    },
+    {
+      "mode": "vector",
+      "client_ms": 152.14120000018738
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 256.6313999996055
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 2060.2064999984577
+    },
+    {
+      "mode": "vector",
+      "client_ms": 291.35849999875063
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 281.19779999906314
+    },
+    {
+      "mode": "vector",
+      "client_ms": 153.89560000039637
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 622.5038999982644
+    },
+    {
+      "mode": "vector",
+      "client_ms": 179.59560000235797
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 194.94969999868772
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 515.5524000001606
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 176.62570000175037
+    },
+    {
+      "mode": "vector",
+      "client_ms": 202.94079999803216
+    },
+    {
+      "mode": "vector",
+      "client_ms": 169.57189999811817
+    },
+    {
+      "mode": "vector",
+      "client_ms": 195.9467999986373
+    },
+    {
+      "mode": "vector",
+      "client_ms": 161.4884999980859
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 183.15830000210553
+    },
+    {
+      "mode": "vector",
+      "client_ms": 180.53189999773167
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 562.083699998766
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 346.6145000020333
+    },
+    {
+      "mode": "vector",
+      "client_ms": 152.42890000081388
+    },
+    {
+      "mode": "vector",
+      "client_ms": 227.74379999827943
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 164.3779000005452
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 159.30690000095638
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 414.0110000007553
+    },
+    {
+      "mode": "vector",
+      "client_ms": 142.71759999974165
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 474.01470000113477
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 155.10440000070957
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 272.3243000000366
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 371.7614000015601
+    },
+    {
+      "mode": "vector",
+      "client_ms": 144.2849999984901
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 184.4835999982024
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 361.3799000013387
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 180.89160000090487
+    },
+    {
+      "mode": "vector",
+      "client_ms": 132.1806000014476
+    },
+    {
+      "mode": "vector",
+      "client_ms": 169.3868999973347
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 169.16050000145333
+    },
+    {
+      "mode": "hybrid",
+      "client_ms": 330.1781000009214
+    }
+  ]
+}
