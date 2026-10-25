@@ -2,19 +2,6 @@
   "rewrites": [
     {
       "source": "/",
-      "has": [
-        {
-          "type": "header",
-          "key": "user-agent",
-          "value": {
-            "re": ".*([Bb]ot|[Cc]rawl|[Ss]pider|curl|[Ww]get|[Pp]ython|httpx|aiohttp|node-fetch|undici|axios|Go-http|okhttp|[Cc]laude|[Aa]nthropic|OpenAI|GPT|[Pp]erplexity|Gemini|[Cc]ohere|[Mm]istral|[Aa]gent|MCP).*"
-          }
-        }
-      ],
-      "destination": "/index.md"
-    },
-    {
-      "source": "/",
       "missing": [
         {
           "type": "header",
@@ -25,19 +12,6 @@
         }
       ],
       "destination": "/index.md"
-    },
-    {
-      "source": "/guide",
-      "has": [
-        {
-          "type": "header",
-          "key": "user-agent",
-          "value": {
-            "re": ".*([Bb]ot|[Cc]rawl|[Ss]pider|curl|[Ww]get|[Pp]ython|httpx|aiohttp|node-fetch|undici|axios|Go-http|okhttp|[Cc]laude|[Aa]nthropic|OpenAI|GPT|[Pp]erplexity|Gemini|[Cc]ohere|[Mm]istral|[Aa]gent|MCP).*"
-          }
-        }
-      ],
-      "destination": "/guide.md"
     },
     {
       "source": "/guide",
@@ -83,7 +57,7 @@
         },
         {
           "key": "Vary",
-          "value": "Accept, User-Agent"
+          "value": "Accept"
         },
         {
           "key": "Link",
