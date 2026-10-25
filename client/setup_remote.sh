@@ -102,7 +102,10 @@ if [ -n "$CLAUDE_BIN" ] && [ -x "$CLAUDE_BIN" ]; then
   echo "--- claude mcp list (context-memory should show as connected while the tunnel is up):"
   "$CLAUDE_BIN" mcp list 2>&1 | grep -i "context-memory" || true
 else
-  echo "WARNING: claude not found; MCP server NOT registered. In a normal shell run:"
+  echo "NOTE: no 'claude' command here (Claude Code may run only inside VS Code). To register the"
+  echo "memory for the VS Code extension, close every VS Code window connected to this machine, then run:"
+  echo "  python3 ~/.local/bin/cmh_push.py doctor --fix"
+  echo "With the CLI installed instead:"
   echo "  claude mcp add --transport http --scope user context-memory http://127.0.0.1:${PORT}/mcp --header 'Authorization: Bearer \${CMH_HUB_TOKEN}'"
 fi
 
