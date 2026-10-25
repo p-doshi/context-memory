@@ -117,7 +117,30 @@ def run_pass(svc, settings: Settings) -> dict:
             summary["backup"] = {"failed": repr(e)[:200]}
     if settings.public_enabled and sources.public_projects:
         summary.update(public_export_due(svc, settings, sources))
+    if settings.public_enabled and settings.public_site_repo:
+        summary.update(site_publish_due(settings))
     return summary
+
+
+def site_publish_due(settings: Settings) -> dict:
+    """Push the static site with the quick tunnel's address whenever it changes."""
+    from context_memory import site_deploy
+    from context_memory.server import children as children_mod
+    home = settings.data_dir.parent
+    child = children_mod.RUNNING.get("cloudflared")
+    if child is None or child.state != "up":
+        return {}
+    url = children_mod.tunnel_url(home, since=child.since)
+    marker = home / "public" / "published-api"
+    if not url or (marker.exists() and marker.read_text().strip() == url):
+        return {}
+    try:
+        out = site_deploy.publish(home, url.removeprefix("https://"), settings.public_site_repo)
+        marker.write_text(url)
+        return {"site_publish": {**out, "api": url}}
+    except Exception as e:
+        log.exception("site publish failed")
+        return {"site_publish": {"failed": repr(e)[:200]}}
 
 
 def public_export_due(svc, settings: Settings, sources) -> dict:

@@ -283,6 +283,8 @@ def build_app(settings: Settings, root: Path, hub_url: str, token: str,
         if not verdict.ok:
             log.info("agent run refused: %s", ",".join(verdict.reasons))
             events = public_mod.canned_run(body, verdict.reply)
+            if "application/json" in request.headers.get("accept", ""):
+                return _json({"events": list(events)})
             return StreamingResponse((f"data: {json.dumps(ev)}\n\n" for ev in events),
                                      media_type="text/event-stream",
                                      headers={**HEADERS, "Cache-Control": "no-store"})
@@ -310,6 +312,14 @@ def build_app(settings: Settings, root: Path, hub_url: str, token: str,
                 yield text[i:i + 80]
 
         sources, mode = store.sources(), store.mode()
+        accept = request.headers.get("accept", "")
+        if "application/json" in accept and "text/event-stream" not in accept:
+            # Same AG-UI events as one JSON array: Cloudflare quick tunnels do not
+            # carry server-sent events, and answers are buffered for the output check anyway.
+            events = list(public_mod.agent_run(svc, sources, body, answerer=answerer, mode=mode,
+                                               lock=store.lock))
+            log.info("agent run (json)")
+            return _json({"events": events})
 
         def stream():
             for ev in public_mod.agent_run(svc, sources, body, answerer=answerer, mode=mode,
@@ -321,6 +331,7 @@ def build_app(settings: Settings, root: Path, hub_url: str, token: str,
                                  headers={**HEADERS, "Cache-Control": "no-store"})
 
     allowed_origins = set(settings.public_allowed_origins)
+    origin_re = re.compile(settings.public_allowed_origin_regex) if settings.public_allowed_origin_regex else None
 
     class Cors:
         """Browser access to /api/* from the configured site origins only."""
@@ -332,7 +343,7 @@ def build_app(settings: Settings, root: Path, hub_url: str, token: str,
             if scope["type"] != "http" or not scope["path"].startswith("/api/"):
                 return await self.app(scope, receive, send)
             origin = dict(scope["headers"]).get(b"origin", b"").decode()
-            allow = origin in allowed_origins
+            allow = origin in allowed_origins or bool(origin_re and origin_re.fullmatch(origin))
             if scope["method"] == "OPTIONS":
                 headers = {"Vary": "Origin"}
                 if allow:

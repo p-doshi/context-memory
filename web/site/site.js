@@ -115,34 +115,24 @@ async function ask(question) {
   let answer = null, hits = [];
   try {
     await apiReady;
+    step.textContent = "Searching the memory and writing an answer…";
+    // AG-UI events as one JSON array (Cloudflare quick tunnels do not carry server-sent events).
     const r = await fetch(API + "/api/agent", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({ threadId, runId: crypto.randomUUID(), messages: history, tools: [], context: [], state: {} }),
     });
     if (r.status === 429) { step.textContent = "Too many questions right now; please wait a minute."; return; }
     if (!r.ok) { step.textContent = "The project memory is offline right now (" + r.status + ")."; return; }
-    const reader = r.body.getReader(), dec = new TextDecoder();
-    let buf = "";
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buf += dec.decode(value, { stream: true });
-      let i;
-      while ((i = buf.indexOf("\n\n")) >= 0) {
-        const line = buf.slice(0, i).split("\n").find((l) => l.startsWith("data: "));
-        buf = buf.slice(i + 2);
-        if (!line) continue;
-        const ev = JSON.parse(line.slice(6));
-        if (ev.type === "STEP_STARTED") step.textContent = ev.stepName === "answer" ? "Writing the answer…" : "Searching the memory…";
-        else if (ev.type === "TOOL_CALL_RESULT") hits = JSON.parse(ev.content).hits || [];
-        else if (ev.type === "TEXT_MESSAGE_START") { answer = el("div", "msg", ""); step.after(answer); }
-        else if (ev.type === "TEXT_MESSAGE_CONTENT") answer.textContent += ev.delta;
-        else if (ev.type === "TEXT_MESSAGE_END") history.push({ id: ev.messageId, role: "assistant", content: answer.textContent });
-        else if (ev.type === "RUN_ERROR") step.textContent = "Error: " + ev.message;
-        else if (ev.type === "RUN_FINISHED")
-          step.textContent = hits.length ? "Answered from " + hits.length + " excerpts, listed below the answer." : "No matching excerpts.";
-      }
+    const { events } = await r.json();
+    for (const ev of events) {
+      if (ev.type === "TOOL_CALL_RESULT") hits = JSON.parse(ev.content).hits || [];
+      else if (ev.type === "TEXT_MESSAGE_START") { answer = el("div", "msg", ""); step.after(answer); }
+      else if (ev.type === "TEXT_MESSAGE_CONTENT") answer.textContent += ev.delta;
+      else if (ev.type === "TEXT_MESSAGE_END") history.push({ id: ev.messageId, role: "assistant", content: answer.textContent });
+      else if (ev.type === "RUN_ERROR") step.textContent = "Error: " + ev.message;
+      else if (ev.type === "RUN_FINISHED")
+        step.textContent = hits.length ? "Answered from " + hits.length + " excerpts, listed below the answer." : "";
     }
     if (hits.length) {
       const box = el("ol", "hits");

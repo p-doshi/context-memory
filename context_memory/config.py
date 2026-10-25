@@ -74,6 +74,11 @@ class Settings(BaseSettings):
     public_export_interval_seconds: int = 6 * 3600
     # Origins (e.g. the Vercel site) allowed to call the public API from browsers.
     public_allowed_origins: list[str] = Field(default_factory=list)
+    # Regex for origins too numerous to list (e.g. a Vercel project's preview URLs).
+    public_allowed_origin_regex: str | None = None
+    # Git remote of the static site repository Vercel deploys from; the daemon pushes
+    # the site there with the current tunnel address (see site_deploy.publish).
+    public_site_repo: str | None = None
     # Local answer model: llama.cpp llama-server on loopback. Empty URL = excerpts only.
     public_llm_url: str = "http://127.0.0.1:8090"
     llm_server_exe: Path | None = None
