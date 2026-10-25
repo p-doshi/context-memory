@@ -50,6 +50,28 @@ connections opened and closed between the OS-level snapshots (firewall logging
 would settle this), and OS-level software on the host (antivirus, vendor support
 agents), which is outside this project.
 
+## Surfaces served by the hub
+
+The hub listens on 127.0.0.1 only. Every route except the static pages needs a device
+token; tokens are stored as SHA-256 hashes and carry scopes.
+
+| Surface | Scope | What it can return |
+|---|---|---|
+| MCP, `/v1/context`, `/v1/sessions` | `read`, `context`, `upload` | Memory through the Disclosure Gate as `cloud_model`; uploads are queued (202) and indexed by the daemon |
+| `/console` + `/v1/console/*` | `admin` | Owner view: counts, graph projection, audit trail |
+| `/visitor` + `/v1/public/*` | `public` only | Projects listed under `[public]`, kinds in `public.kinds` (chats excluded by default), gated as `public`, no local paths; 60 requests per minute per token. A public token cannot call any other route, and a normal token cannot call the public routes. |
+
+Nothing is public until projects are listed under `[public]`. The visitor answerer is
+extractive, so no language-model provider sees visitor questions.
+
+## Host firewall
+
+`scripts/harden-host.ps1` (run as administrator) adds an inbound block on the hub port and
+an outbound block on the harness interpreter for every non-loopback address. With the
+outbound rule in place, an indexing bug or a malicious dependency in the Python process
+cannot send data off the machine; ssh.exe (tunnels) and chrome.exe (browser syncs) are
+separate programs and unaffected. `cmh security-check` reports whether both rules exist.
+
 ## Other machines
 
 Remote machines reach the hub only through SSH (see [remote-setup.md](remote-setup.md)).

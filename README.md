@@ -33,7 +33,16 @@ One store (SQLite + LanceDB) for every source and account:
   as going to a cloud model (addendum §11)
 - Supersession instead of deletion: changed sources retire old chunks and edges
 - Always-on daemon with startup reconciliation, heartbeat, GPU temperature
-- MCP server (stdio) and `cmh` CLI
+- MCP server (stdio and HTTP hub) and `cmh` CLI
+- Hub (127.0.0.1 only) with per-device tokens and scopes (`read`, `write`, `upload`,
+  `context`, `public`, `admin`); hash-chained audit log
+- Owner console (`cmh console`, admin scope): store overview, project graph projection,
+  entity neighbourhoods, audit trail
+- Visitor page (`cmh visitor`, public scope): an [AG-UI](https://docs.ag-ui.com) client over
+  only the projects listed under `[public]` in `sources.toml`, chats excluded; answers are
+  extractive (no language model) and pass the Disclosure Gate as recipient `public`
+- `cmh security-check` and `scripts/harden-host.ps1` (admin): inbound block on the hub
+  port, outbound block on the harness interpreter
 
 ## Reproducible setup
 
@@ -86,6 +95,10 @@ uv run cmh write "Spectral loss replaced MSE on 2026-10-18." --project ocean-dow
 uv run cmh secret set perplexity                # hidden prompt -> OS keychain
 uv run cmh stats ; uv run cmh audit -n 10
 uv run cmh serve                                # MCP server on stdio
+uv run cmh device add laptop2 --bundle          # token + setup bundle for another machine
+uv run cmh console                              # owner console in the browser
+uv run cmh visitor                              # preview of what a visitor would see
+uv run cmh security-check
 ```
 
 The always-on daemon is a per-user scheduled task:
@@ -115,12 +128,13 @@ context_memory/   Python package: memory core, ingestion, MCP server, CLI
 tests/            unit tests (offline, hash embedder)
 scripts/          benchmarks and maintenance scripts
 docs/             design document, decision records, benchmark plans and results
-web/              (planned) public website and agentic-UI framework
+web/console/      owner console (static; vendored Cytoscape.js 3.30.2, MIT)
+web/visitor/      visitor page, AG-UI client
+client/           stdlib-only push/pull client and setup scripts for other machines
 ```
 
 ## Roadmap
 
-Weeks 1 to 6 follow design §26. A later stage adds a public website and an agentic-UI
-framework for external visitors. That will be a separate `web/` package with its own
-lockfile. It talks to the memory core only over an authenticated API, and it never reads
-the local data directory.
+Weeks 1 to 6 follow design §26. The visitor page is served by the local hub today. Public
+hosting (a separate host that holds only an exported public subset, never the local data
+directory) and an optional language-model answerer are open decisions.
