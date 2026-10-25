@@ -47,8 +47,8 @@ _CODE_REF = re.compile(r"[a-z][a-z0-9]*(?:[._][a-z0-9]+)+")
 
 
 def _real(name: str, m: re.Match) -> bool:
-    """False for `api_key=llm_key)`-style matches: the value is a variable or
-    attribute name in code (lowercase, with _ or .), not a secret."""
+    """False when the assigned value is a variable or attribute name in code
+    (lowercase, with _ or ., e.g. a keyword argument passed by name), not a secret."""
     if name != "password_assignment":
         return True
     value = re.split(r"[:=]", m.group(0), maxsplit=1)[1].strip().strip("'\"").rstrip("),;]")
