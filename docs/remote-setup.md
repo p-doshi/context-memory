@@ -71,7 +71,13 @@ or directly into the hub machine on the same network (Linux laptop):
    terminal, chat or command line.
 
 Away from the home network the direct link does not work (by design: the SSH
-rule is LAN-only); use the lab-server route instead.
+rule is LAN-only). It also fails while a VPN client on the hub machine blocks LAN
+traffic: the Dal Cisco profile sets `LocalLanAccess` false and not user-controllable.
+Then use the server route, which needs only the VPN and your normal login there:
+
+```sh
+bash client/hub-link.sh via parth@bigdata1.research.cs.dal.ca
+```
 
 ## 3. Clusters with multifactor login
 
