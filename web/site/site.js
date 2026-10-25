@@ -14,10 +14,23 @@ const fmt = (n) => Number(n).toLocaleString("en");
 // API origin: "" when this laptop serves the page; the API host when the
 // static site is hosted elsewhere (config.json is written at deploy time).
 let API = "";
-const apiReady = fetch("/config.json").then((r) => r.json()).then((c) => { API = c.api || ""; }).catch(() => {});
+const loadConfig = () => fetch("/config.json", { cache: "no-store" }).then((r) => r.json())
+  .then((c) => { API = c.api || ""; }).catch(() => {});
+let apiReady = loadConfig();
 async function getJSON(path, opts) {
   await apiReady;
-  const r = await fetch((path.startsWith("/api/") ? API : "") + path, opts);
+  const url = () => (path.startsWith("/api/") ? API : "") + path;
+  let r;
+  try { r = await fetch(url(), opts); } catch (e) {
+    // The tunnel address changes when the owner's laptop restarts; a page opened
+    // before that holds the old one. Re-read it once and retry.
+    if (!path.startsWith("/api/")) throw e;
+    const before = API;
+    apiReady = loadConfig();
+    await apiReady;
+    if (API === before) throw e;
+    r = await fetch(url(), opts);
+  }
   if (!r.ok) throw new Error(path + " -> " + r.status);
   return r.json();
 }

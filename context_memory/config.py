@@ -102,6 +102,10 @@ class Settings(BaseSettings):
     llm_gpu_layers: int = 99
     # 3072 leaves GPU headroom for the embedder on a 6 GB card; prompts stay under ~1.5k tokens.
     llm_context_tokens: int = 3072
+    # Owner report: the local model writes a short digest of each conversation
+    # (context/input/architecture/results/findings/errors); seconds spent per daemon pass.
+    digest_enabled: bool = True
+    digest_budget_seconds: int = 150
     # cloudflared binary and its config (named tunnel -> 127.0.0.1:public_port).
     cloudflared_exe: Path | None = None
     cloudflared_config: Path | None = None

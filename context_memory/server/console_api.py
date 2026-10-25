@@ -178,7 +178,8 @@ def _docs(svc) -> list[dict]:
         if not title or title == path or title.endswith(".jsonl"):
             title = _untitled(svc, doc_id, path or "")
         out.append({"id": doc_id, "project": project, "kind": kind, "path": path, "title": title,
-                    "group": _group(kind, path, m), "when": _when(m, created)})
+                    "group": _group(kind, path, m), "when": _when(m, created),
+                    "subagent": bool(m.get("parent_session"))})
     return out
 
 
@@ -358,7 +359,8 @@ def activity(svc, n: int = 60) -> list[dict]:
     words = {"ingest": "indexed", "retire": "retired", "rename_project": "renamed project",
              "public_export": "published the public copy", "device_add": "added device", "device_pair": "paired device",
              "device_revoke": "revoked device", "device_rotate": "new token for device", "reconcile": "repaired the stores",
-             "graph_rebuild": "rebuilt the knowledge graph", "snapshot": "backed up", "public_agent": "visitor question"}
+             "graph_rebuild": "rebuilt the knowledge graph", "snapshot": "backed up", "public_agent": "visitor question",
+             "report_hide": "hid from report", "report_unhide": "showed in report again"}
     out = []
     for r in svc.sqlite.audit_tail(min(n * 4, 2000)):
         if r["action"] in ("search", "get", "context", "public_search") or r["outcome"] in ("unchanged", "skipped"):
@@ -368,3 +370,52 @@ def activity(svc, n: int = 60) -> list[dict]:
         if len(out) >= n:
             break
     return out
+
+
+def report(svc, days: int = 30, project: str | None = None, per_field: int = 60) -> dict:
+    """The owner report: digest notes (see digest.py) for the period or project,
+    grouped under six headings, newest first, each with its source document.
+    Coverage says how many conversations in scope have a digest yet."""
+    from context_memory import digest
+    q = svc.sqlite.conn.execute
+    digest.ensure(svc.sqlite.conn)
+    since = _since(days)
+    hidden = digest.hidden_ids(svc.sqlite.conn)
+    docs = {d["id"]: d for d in _docs(svc)
+            if d["group"] != "Files & notes" and d["when"] >= since and (project is None or d["project"] == project)
+            and d["id"] not in hidden and not d["subagent"]}
+    rows = {doc_id: (status, json.loads(items)) for doc_id, status, items in q(
+        "SELECT doc_id, status, items FROM digests")}
+    sections: dict[str, list] = {f: [] for f in digest.FIELDS}
+    per_project: dict[str, int] = {}
+    digested = 0
+    for doc_id, d in docs.items():
+        if doc_id not in rows or rows[doc_id][0] != "ok":
+            continue
+        digested += 1
+        for it in rows[doc_id][1]:
+            sections[it["field"]].append({**it, "doc": doc_id, "when": d["when"], "project": d["project"],
+                                          "title": d["title"][:120], "group": d["group"]})
+            per_project[d["project"]] = per_project.get(d["project"], 0) + 1
+    counts = {f: len(v) for f, v in sections.items()}
+    for f in sections:
+        sections[f] = sorted(sections[f], key=lambda x: x["when"], reverse=True)[:per_field]
+    return {"days": days, "project": project, "conversations": len(docs), "digested": digested,
+            "pending_total": len(digest.pending(svc.sqlite.conn, 10_000)),
+            "counts": counts, "sections": sections, "hidden": len(hidden),
+            "by_project": sorted(per_project.items(), key=lambda kv: -kv[1])}
+
+
+def passage(svc, doc_id: str, quote: str) -> dict:
+    """The passage of a document that contains a quote, for checking a report note."""
+    from context_memory import digest
+    q = svc.sqlite.conn.execute
+    doc = q("SELECT title, path, project FROM documents WHERE doc_id = ?", (doc_id,)).fetchone()
+    if not doc:
+        return {"found": False}
+    want = digest.words(quote)
+    for ordinal, text in q("SELECT ordinal, text FROM chunks WHERE doc_id = ? AND valid_to IS NULL ORDER BY ordinal",
+                           (doc_id,)):
+        if want and want in digest.words(text):
+            return {"found": True, "title": doc[0] or doc[1], "project": doc[2], "ordinal": ordinal, "text": text[:4000]}
+    return {"found": False, "title": doc[0] or doc[1], "project": doc[2]}

@@ -119,7 +119,22 @@ def run_pass(svc, settings: Settings) -> dict:
         summary.update(public_export_due(svc, settings, sources))
     if settings.public_enabled and settings.public_site_repo:
         summary.update(site_publish_due(settings))
+    summary.update(digests_due(svc, settings))
     return summary
+
+
+def digests_due(svc, settings: Settings) -> dict:
+    """Digest a few more conversations for the owner report, if the local model is up."""
+    from context_memory import digest, llm
+    if not settings.digest_enabled or not settings.public_llm_url or not llm.health(settings.public_llm_url):
+        return {}
+    from context_memory.secrets import broker
+    try:
+        return {"digests": digest.run(svc.sqlite.conn, settings.public_llm_url, broker.get_secret("llm-server-key"),
+                                      budget_seconds=settings.digest_budget_seconds)}
+    except Exception as e:
+        log.exception("digests failed")
+        return {"digests": {"failed": repr(e)[:200]}}
 
 
 def site_publish_due(settings: Settings) -> dict:

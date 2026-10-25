@@ -9,15 +9,15 @@
 </head>
 <body>
 <header class="top">
-  <span class="brand">Your memory</span>
+  <span class="brand"><i aria-hidden="true"></i>Your memory</span>
   <nav class="tabs" aria-label="Sections">
-    <button data-tab="overview" class="active">Overview <kbd>1</kbd></button>
+    <button data-tab="report" class="active">Report <kbd>1</kbd></button>
     <button data-tab="projects">Projects <kbd>2</kbd></button>
     <button data-tab="activity">Activity <kbd>3</kbd></button>
     <button data-tab="search">Search <kbd>4</kbd></button>
     <button data-tab="public">Public site <kbd>5</kbd></button>
   </nav>
-  <span id="status" class="muted small"></span>
+  <span id="status" class="mono small muted"></span>
   <button class="icon" id="theme" type="button" aria-label="Colour theme: system">◐</button>
 </header>
 
@@ -27,84 +27,72 @@
     <button id="token-save" class="primary">Open</button></div>
 </section>
 
-<main class="wrap">
-  <!-- Overview -->
-  <section id="tab-overview" class="tab">
-    <div class="filters" role="group" aria-label="Period">
-      <span class="muted small">Period</span>
-      <button data-days="7">7 days</button><button data-days="30" class="on">30 days</button>
-      <button data-days="90">90 days</button><button data-days="365">1 year</button><button data-days="0">All time</button>
+<main>
+  <!-- Report -->
+  <section id="tab-report" class="tab">
+    <div class="head">
+      <div>
+        <dl class="docket" id="r-docket"></dl>
+        <h1 id="r-title">Report</h1>
+        <p class="lede" id="r-lede">Loading…</p>
+      </div>
+      <div class="period" role="group" aria-label="Period" id="r-period">
+        <button data-days="7">7d</button><button data-days="30" class="on">30d</button>
+        <button data-days="90">90d</button><button data-days="0">all</button>
+      </div>
     </div>
-    <p class="story" id="story">Loading…</p>
-    <div class="kpis" id="kpis"></div>
-
-    <div class="split">
-      <article class="card">
-        <header><h2>When you worked</h2>
-          <p class="sub">Coding sessions and AI chats over time, by where they happened. Files and notes have no date of their
-            own, so they are left out here.</p></header>
-        <div class="legend" id="tl-legend"></div>
-        <div class="chart" id="tl-chart"></div>
-        <button class="link" data-table="tl">Show as table</button><div class="tablebox" id="tl-table" hidden></div>
-      </article>
-      <article class="card">
-        <header><h2>What you touched last</h2>
-          <p class="sub">Each project's most recent session or chat. Click one to open its story.</p></header>
-        <div class="latest" id="latest"></div>
-      </article>
-    </div>
-
-    <div class="two">
-      <article class="card">
-        <header><h2>Where it comes from</h2>
-          <p class="sub">Everything remembered, per project and source. The longest bar is the project the memory knows most about.</p></header>
-        <div class="chart" id="pj-chart"></div>
-        <button class="link" data-table="pj">Show as table</button><div class="tablebox" id="pj-table" hidden></div>
-      </article>
-      <article class="card">
-        <header><h2>Kept up to date</h2>
-          <p class="sub">When a file or session changes, its old passages are retired (kept, not deleted) and the new version takes over.</p></header>
-        <p class="sentence" id="kept"></p>
-        <button class="link" data-table="rt">Show by period</button><div class="tablebox" id="rt-table" hidden></div>
-      </article>
-    </div>
-
-    <div class="two">
-      <article class="card"><header><h2>Health</h2><p class="sub">Plain answers to "is it working?"</p></header>
-        <table id="health" class="kv"></table></article>
-      <article class="card"><header><h2>Machines</h2><p class="sub">Where sessions were recorded.</p></header>
-        <table id="machines"></table></article>
+    <div class="body">
+      <nav class="toc" id="r-toc" aria-label="Report sections"></nav>
+      <div class="main" id="r-main"></div>
+      <aside class="aside">
+        <h3>When you worked</h3>
+        <p class="note" id="r-when-note">Sessions and chats per day.</p>
+        <div class="chart" id="r-when"></div>
+        <button class="link" data-table="rw">Show as table</button><div class="tablebox" id="rw-table" hidden></div>
+        <h3>By project</h3>
+        <p class="note">Notes in this report. Click one to open its story.</p>
+        <div id="r-projects"></div>
+        <h3>How notes are made</h3>
+        <p class="note">The local model on this laptop reads each conversation once and writes short notes under six
+          headings. A note is kept only if its quote is found word for word in the conversation. That proves the words
+          exist, not that the summary is perfect, so every note shows its quote: click it to read the passage.</p>
+        <p class="note" id="r-coverage"></p>
+      </aside>
     </div>
   </section>
 
   <!-- Projects -->
   <section id="tab-projects" class="tab" hidden>
-    <div class="filters" id="p-chips" role="group" aria-label="Project"></div>
-    <p class="story" id="p-story">Loading…</p>
-    <div class="split">
+    <div class="head">
       <div>
-        <article class="card">
-          <header><h2>When</h2><p class="sub" id="p-when-sub"></p></header>
-          <div class="legend" id="p-legend"></div>
-          <div class="chart" id="p-activity"></div>
-        </article>
-        <article class="card">
-          <header><h2>Which files, when</h2>
-            <p class="sub">Rows are the files this project's sessions and chats worked on most, in the order they first came up.
-              A square means sessions or chats in that <span class="bucket-word">week</span> named the file; bigger and darker means
-              more of them. Click a square for that <span class="bucket-word">week</span>, or a file name for every item that named it.</p></header>
-          <div class="legend" id="p-qlegend"></div>
-          <div class="chart" id="p-matrix"></div>
-          <button class="link" data-table="pm">Show as table</button><div class="tablebox" id="pm-table" hidden></div>
-        </article>
+        <div class="chips" id="p-chips" role="group" aria-label="Project"></div>
+        <dl class="docket" id="p-docket"></dl>
+        <h1 id="p-title"></h1>
+        <p class="lede" id="p-lede">Loading…</p>
       </div>
-      <aside class="card side" id="p-side" aria-live="polite"></aside>
+    </div>
+    <div class="body">
+      <nav class="toc" id="p-toc" aria-label="Project sections"></nav>
+      <div class="main" id="p-main"></div>
+      <aside class="aside">
+        <h3 id="p-when-title">When</h3>
+        <p class="note" id="p-when-note"></p>
+        <div class="chart" id="p-when"></div>
+        <button class="link" data-table="pw">Show as table</button><div class="tablebox" id="pw-table" hidden></div>
+        <h3>Latest</h3>
+        <p class="note">The most recent sessions and chats.</p>
+        <div id="p-latest"></div>
+      </aside>
     </div>
   </section>
 
   <!-- Activity -->
-  <section id="tab-activity" class="tab" hidden>
-    <p class="story" id="chain"></p>
+  <section id="tab-activity" class="tab wrap" hidden>
+    <div class="two">
+      <article class="card"><h2>Health</h2><p class="note">Plain answers to "is it working?"</p><table id="health" class="kv"></table></article>
+      <article class="card"><h2>Machines</h2><p class="note">Where sessions were recorded.</p><table id="machines"></table></article>
+    </div>
+    <p class="lede" id="chain"></p>
     <div class="filters" role="group" aria-label="Kind of change" id="a-filter">
       <button data-kind="" class="on">Everything</button><button data-kind="indexed">Indexed</button>
       <button data-kind="retired">Retired</button><button data-kind="device">Devices</button>
@@ -114,7 +102,7 @@
   </section>
 
   <!-- Search -->
-  <section id="tab-search" class="tab" hidden>
+  <section id="tab-search" class="tab wrap" hidden>
     <div class="filters">
       <input id="q" placeholder="Search everything, including chats" size="50">
       <select id="mode" aria-label="Search method"><option value="">default</option><option value="hybrid">meaning + keywords</option>
@@ -126,17 +114,24 @@
   </section>
 
   <!-- Public site -->
-  <section id="tab-public" class="tab" hidden>
+  <section id="tab-public" class="tab wrap" hidden>
     <div class="two">
-      <article class="card"><header><h2>Public site</h2><p class="sub">What the internet can reach, and its switches.</p></header>
-        <table id="pub-status"></table>
-        <p class="muted small">Switch the visitor model with <code>cmh public model-off</code> / <code>model-on</code>;
+      <article class="card"><h2>Public site</h2><p class="note">What the internet can reach, and its switches.</p>
+        <table id="pub-status" class="kv"></table>
+        <p class="note">Switch the visitor model with <code>cmh public model-off</code> / <code>model-on</code>;
           rules and replies live in <code>config/public_guard.toml</code> (reloaded on save).</p></article>
-      <article class="card"><header><h2>Moderation log</h2><p class="sub" id="mod-info"></p></header>
+      <article class="card"><h2>Moderation log</h2><p class="note" id="mod-info"></p>
         <div id="moderation" class="feed"></div></article>
     </div>
   </section>
 </main>
+
+<dialog id="passage" aria-labelledby="ps-title">
+  <form method="dialog"><button class="icon close" aria-label="Close">✕</button></form>
+  <div class="kind mono" id="ps-kind"></div>
+  <h2 id="ps-title"></h2>
+  <div id="ps-text" class="ps-text"></div>
+</dialog>
 <div class="tip" id="tip" role="tooltip" hidden></div>
 <script src="/console/app.js"></script>
 </body>
