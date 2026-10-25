@@ -105,7 +105,7 @@ def test_markdown_twin_names_every_pipeline_stage():
 def test_vercel_deploy_folder_fills_api_host(tmp_path):
     from context_memory.site_deploy import write_deploy
     files = write_deploy(tmp_path / "deploy", "api.example.org")
-    assert "index.html" in files
+    assert "human/index.html" in files and "index.html" not in files
     assert "API_HOST" not in (tmp_path / "deploy" / "vercel.json").read_text()
     assert json.loads((tmp_path / "deploy" / "config.json").read_text())["api"] == "https://api.example.org"
     with pytest.raises(ValueError):

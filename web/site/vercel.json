@@ -52,6 +52,14 @@
         }
       ],
       "destination": "/guide.md"
+    },
+    {
+      "source": "/",
+      "destination": "/human/index.html"
+    },
+    {
+      "source": "/guide",
+      "destination": "/human/guide.html"
     }
   ],
   "headers": [

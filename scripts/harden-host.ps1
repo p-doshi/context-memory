@@ -57,11 +57,15 @@ $base = (($cfg | Where-Object { $_ -match '^\s*home\s*=' }) -replace '^\s*home\s
 # The visitor answer model (llama-server) never needs the network either; it is
 # taken from CMH_LLM_SERVER_EXE when set. cloudflared is deliberately not listed:
 # carrying visitor traffic is its job.
-$llm = [Environment]::GetEnvironmentVariable("CMH_LLM_SERVER_EXE", "User")
+# The elevated session may not see the owner's user environment, so also look
+# beside the repository (<home>\bin\llama-*\llama-server.exe).
+$llm = @([Environment]::GetEnvironmentVariable("CMH_LLM_SERVER_EXE", "User")) +
+       @(Get-ChildItem (Join-Path (Split-Path -Parent $Repo) "bin\llama-*\llama-server.exe") -ErrorAction SilentlyContinue |
+         ForEach-Object FullName)
 $programs = @(
     (Join-Path $Repo ".venv\Scripts\python.exe"), (Join-Path $Repo ".venv\Scripts\pythonw.exe"),
-    (Join-Path $base "python.exe"), (Join-Path $base "pythonw.exe"), $llm
-) | Where-Object { $_ -and (Test-Path $_) }
+    (Join-Path $base "python.exe"), (Join-Path $base "pythonw.exe")
+) + $llm | Where-Object { $_ -and (Test-Path $_) } | Sort-Object -Unique
 
 New-NetFirewallRule -DisplayName $InboundName -Direction Inbound -Protocol TCP -LocalPort $HubPort `
     -Action Block -Profile Any | Out-Null
@@ -102,9 +106,12 @@ if sys.argv[2]:
 $py = Join-Path $base "python.exe"
 $probeFile = Join-Path $env:TEMP "cmh-egress-probe.py"
 Set-Content -Path $probeFile -Value $probe -Encoding ascii
-$out = & $py -I $probeFile $HubPort "$gateway"
+# Through cmd so Python's own errors (stderr) are shown, not swallowed.
+$out = & cmd /c "`"$py`" -I `"$probeFile`" $HubPort $gateway 2>&1"
+$code = $LASTEXITCODE
 Remove-Item $probeFile -ErrorAction SilentlyContinue
 $out | ForEach-Object { Write-Output "self-test: $_" }
+if ($code -ne 0) { Write-Output "self-test: probe exited with $code (running as $env:USERNAME)" }
 if ($out -match "gateway error 10013") { Write-Output "self-test: PASS (outbound blocked by firewall)" }
 elseif (-not $gateway) { Write-Output "self-test: no default gateway (offline?); rerun when connected" }
 else { Write-Output "self-test: CHECK (expected 'gateway error 10013')" }
