@@ -45,3 +45,12 @@ def test_findings_report_line_not_secret():
 ])
 def test_blocked_filenames(name, blocked):
     assert blocked_filename(Path(name)) is blocked
+
+
+def test_code_references_are_not_passwords():
+    from context_memory.ingestion.sensitive_scanner import redact_text, scan_text
+    assert not scan_text("stream_chat(msgs, url, api_key=llm_key))")
+    assert not scan_text("token = settings.api_token")
+    assert scan_text('password = "hunter2hunter2"')
+    assert scan_text("api_key=Zx81kQ0pLm2vB7")
+    assert "llm_key" in redact_text("api_key=llm_key)")

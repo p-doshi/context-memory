@@ -43,11 +43,23 @@ class Finding:
     line: int
 
 
+_CODE_REF = re.compile(r"[a-z][a-z0-9]*(?:[._][a-z0-9]+)+")
+
+
+def _real(name: str, m: re.Match) -> bool:
+    """False for `api_key=llm_key)`-style matches: the value is a variable or
+    attribute name in code (lowercase, with _ or .), not a secret."""
+    if name != "password_assignment":
+        return True
+    value = re.split(r"[:=]", m.group(0), maxsplit=1)[1].strip().strip("'\"").rstrip("),;]")
+    return not _CODE_REF.fullmatch(value)
+
+
 def scan_text(text: str) -> list[Finding]:
     findings: list[Finding] = []
     for lineno, line in enumerate(text.splitlines(), start=1):
         for name, pattern in RULES:
-            if pattern.search(line):
+            if any(_real(name, m) for m in pattern.finditer(line)):
                 findings.append(Finding(name, lineno))
     return findings
 
@@ -55,7 +67,7 @@ def scan_text(text: str) -> list[Finding]:
 def redact_text(text: str) -> str:
     """Replace every rule match with [REDACTED:<rule>]."""
     for name, pattern in RULES:
-        text = pattern.sub(f"[REDACTED:{name}]", text)
+        text = pattern.sub(lambda m, n=name: f"[REDACTED:{n}]" if _real(n, m) else m.group(0), text)
     return text
 
 

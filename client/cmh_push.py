@@ -21,6 +21,8 @@ Commands:
   flush        upload everything queued
   sweep        queue changed transcripts not yet uploaded, then flush
   status       show configuration, queue, and hub reachability
+  doctor       explain why Claude Code does not list the context-memory MCP server;
+               `doctor --fix` registers it (only while no Claude Code process runs)
 
 Transcripts are sent as opaque files; the hub parses them. The format is
 internal to Claude Code and changes between versions.
@@ -219,9 +221,79 @@ def status(cfg):
             print("hub:        unreachable:", e)
 
 
+def doctor(cfg, fix=False):
+    """Why does Claude Code (CLI or VS Code) not list context-memory? Reports what
+    each config file holds; --fix registers it in ~/.claude.json, but only while
+    no Claude Code process runs (a running one rewrites the file on exit)."""
+    home = Path(os.environ.get("HOME") or Path.home())
+    files = [home / ".claude.json"]
+    if os.environ.get("CLAUDE_CONFIG_DIR"):
+        files.insert(0, Path(os.environ["CLAUDE_CONFIG_DIR"]).expanduser() / ".claude.json")
+    print("CLAUDE_CONFIG_DIR:", os.environ.get("CLAUDE_CONFIG_DIR", "(unset)"))
+    found = False
+    for f in files:
+        if not f.exists():
+            print(f"{f}: missing")
+            continue
+        try:
+            data = json.loads(f.read_text())
+        except ValueError as e:
+            print(f"{f}: unreadable JSON ({e})")
+            continue
+        user = sorted((data.get("mcpServers") or {}).keys())
+        proj = [p for p, v in (data.get("projects") or {}).items() if "context-memory" in (v.get("mcpServers") or {})]
+        found = found or "context-memory" in user
+        print(f"{f}: user-scope MCP servers {user or 'none'}; project-scoped context-memory in {len(proj)} project(s)")
+    rc = home / ".bashrc"
+    if rc.exists():
+        text = rc.read_text(errors="replace")
+        guard = min([i for i in (text.find("*i*) ;;"), text.find('[ -z "$PS1" ] && return')) if i >= 0] or [-1])
+        pos = text.find("CMH_HUB_TOKEN")
+        if pos >= 0 and 0 <= guard < pos:
+            print("~/.bashrc: CMH_HUB_TOKEN is exported after the non-interactive return, so the VS Code "
+                  "server never sees it (--fix writes the header without the variable)")
+    print("CMH_HUB_TOKEN in this shell:", "yes" if os.environ.get("CMH_HUB_TOKEN") else "no")
+    status(cfg)
+    try:
+        procs = subprocess.run(["pgrep", "-u", str(os.getuid()), "-f", "claude"], capture_output=True,
+                               text=True).stdout.split()
+        procs = [p for p in procs if p != str(os.getpid())]
+    except (OSError, AttributeError):
+        procs = []
+    if found and not fix:
+        print("context-memory is registered; if /mcp still misses it, restart the VS Code window.")
+        return 0
+    if not fix:
+        print("not registered at user scope. Close every Claude Code session and VS Code window on this "
+              "machine, then run: python3 ~/.local/bin/cmh_push.py doctor --fix")
+        return 1
+    if procs:
+        print(f"{len(procs)} Claude Code process(es) running ({' '.join(procs[:5])}); they would overwrite "
+              "~/.claude.json on exit. Close them (VS Code: close the remote window) and rerun --fix.")
+        return 1
+    target = files[0]
+    data = json.loads(target.read_text()) if target.exists() else {}
+    if target.exists():
+        target.with_name(target.name + ".bak-cmh").write_text(target.read_text())
+    # Literal token (file is 600): works where the VS Code server lacks shell variables.
+    data.setdefault("mcpServers", {})["context-memory"] = {
+        "type": "http", "url": cfg["hub_url"].rstrip("/") + "/mcp",
+        "headers": {"Authorization": "Bearer " + token(cfg)}}
+    tmp = target.with_name(target.name + ".tmp-cmh")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as fh:
+        json.dump(data, fh, indent=2)
+    os.replace(tmp, target)
+    print(f"registered context-memory in {target} (backup: {target.name}.bak-cmh). Open VS Code again; "
+          "/mcp should list it as connected while the tunnel is up.")
+    return 0
+
+
 def main(argv):
     cmd = argv[1] if len(argv) > 1 else "status"
     cfg = config()
+    if cmd == "doctor":
+        return doctor(cfg, fix="--fix" in argv)
     if cmd == "hook-end":
         try:
             data = json.load(sys.stdin)

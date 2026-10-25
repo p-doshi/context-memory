@@ -258,3 +258,27 @@ def test_client_files_are_served_from_an_allowlist(client):
     assert "cmh_push" in client.get("/client/setup_remote.sh").text
     assert client.get("/client/cmh.token").status_code == 404
     assert client.get("/client/..%2Fpyproject.toml").status_code == 404
+
+
+def test_push_client_doctor_registers_with_literal_token(tmp_path, monkeypatch, capsys):
+    import importlib.util
+    import pathlib
+    spec = importlib.util.spec_from_file_location(
+        "cmh_push_doc", pathlib.Path(__file__).resolve().parents[2] / "client" / "cmh_push.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.delenv("CMH_HUB_TOKEN", raising=False)  # token() prefers the variable
+    (tmp_path / "tok").write_text("cmh_testtoken")
+    (tmp_path / ".claude.json").write_text(json.dumps({"projects": {}, "other": 1}))
+    cfg = {"hub_url": "http://127.0.0.1:1", "token_file": str(tmp_path / "tok"), "claude_dir": str(tmp_path)}
+    monkeypatch.setattr(mod, "status", lambda cfg: None)
+    monkeypatch.setattr(mod.subprocess, "run", lambda *a, **k: type("R", (), {"stdout": ""})())
+    assert mod.doctor(cfg) == 1                                      # reports, changes nothing
+    assert mod.doctor(cfg, fix=True) == 0
+    data = json.loads((tmp_path / ".claude.json").read_text())
+    entry = data["mcpServers"]["context-memory"]
+    assert data["other"] == 1 and entry["url"] == "http://127.0.0.1:1/mcp"
+    assert entry["headers"]["Authorization"] == "Bearer cmh_testtoken"
+    assert (tmp_path / ".claude.json.bak-cmh").exists()
