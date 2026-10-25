@@ -255,9 +255,16 @@ def doctor(cfg, fix=False):
     print("CMH_HUB_TOKEN in this shell:", "yes" if os.environ.get("CMH_HUB_TOKEN") else "no")
     status(cfg)
     try:
-        procs = subprocess.run(["pgrep", "-u", str(os.getuid()), "-f", "claude"], capture_output=True,
-                               text=True).stdout.split()
-        procs = [p for p in procs if p != str(os.getpid())]
+        # Only Claude Code itself rewrites ~/.claude.json: the CLI or the binary the VS Code
+        # extension runs. A bare "claude" match also catches editors with ~/.claude files open.
+        lines = subprocess.run(["pgrep", "-a", "-u", str(os.getuid()), "-f", "claude"], capture_output=True,
+                               text=True).stdout.splitlines()
+        procs = []
+        for line in lines:
+            pid, _, cmd = line.partition(" ")
+            exe = cmd.split(" ", 1)[0]
+            if pid != str(os.getpid()) and (os.path.basename(exe) == "claude" or "anthropic.claude-code" in exe):
+                procs.append((pid, cmd))
     except (OSError, AttributeError):
         procs = []
     if found and not fix:
@@ -268,8 +275,10 @@ def doctor(cfg, fix=False):
               "machine, then run: python3 ~/.local/bin/cmh_push.py doctor --fix")
         return 1
     if procs:
-        print(f"{len(procs)} Claude Code process(es) running ({' '.join(procs[:5])}); they would overwrite "
-              "~/.claude.json on exit. Close them (VS Code: close the remote window) and rerun --fix.")
+        print(f"{len(procs)} Claude Code process(es) running; they would overwrite ~/.claude.json on exit:")
+        for pid, cmd in procs[:8]:
+            print(f"  {pid}  {cmd[:140]}")
+        print("Close them (quit VS Code; or: kill " + " ".join(p for p, _ in procs) + ") and rerun --fix.")
         return 1
     target = files[0]
     data = json.loads(target.read_text()) if target.exists() else {}
