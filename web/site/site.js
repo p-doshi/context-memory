@@ -10,6 +10,7 @@ function el(tag, cls, ...kids) {
   return e;
 }
 const fmt = (n) => Number(n).toLocaleString("en");
+const ms = (v) => (v == null ? "–" : v < 10 ? `${v.toFixed(1)} ms` : `${Math.round(v)} ms`);
 
 // API origin: "" when this laptop serves the page; the API host when the
 // static site is hosted elsewhere (config.json is written at deploy time).
@@ -50,18 +51,11 @@ $("#theme")?.addEventListener("click", () => {
   applyTheme(theme);
   try { localStorage.setItem("cmh-theme", theme); } catch {}
 });
-
-// ---- reveal on scroll (decorative; content is visible without JS) --------------
 document.documentElement.classList.add("js");
-const sections = document.querySelectorAll(".reveal");
-if ("IntersectionObserver" in window) {
-  const io = new IntersectionObserver((entries) => {
-    for (const e of entries) if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); }
-  }, { rootMargin: "0px 0px -60px 0px", threshold: 0.05 });
-  sections.forEach((s) => io.observe(s));
-} else sections.forEach((s) => s.classList.add("in"));
 
-// ---- flow diagram ---------------------------------------------------------------
+// ---- Figure 1: the transit map -----------------------------------------------------
+// Grey lines are every source feeding the memory; the signal line is one question's
+// path. Station tags show times measured on this page's own search.
 const SVG = "http://www.w3.org/2000/svg";
 function svg(tag, attrs = {}, ...kids) {
   const e = document.createElementNS(SVG, tag);
@@ -69,74 +63,178 @@ function svg(tag, attrs = {}, ...kids) {
   for (const k of kids) e.append(k instanceof Node ? k : document.createTextNode(String(k)));
   return e;
 }
-const SOURCES = [["Claude Code", "every machine"], ["claude.ai", "web + desktop"], ["Perplexity", "threads"],
-                 ["Code", "git repositories"], ["Notes", "Markdown docs"]];
-const OUTS = [["Your assistants", "any machine, via SSH"], ["Owner console", "private"], ["This site", "public copy"]];
+const SOURCES = ["Claude Code · laptop", "Claude Code · lab server", "claude.ai", "Perplexity", "Code + notes", "XPS laptop"];
+const STOP_NAMES = ["SSH link", "Hub", "Gate", "Search", "Verify", "Answer"];
+let TIMES = null;   // { link, hub, gate, search, verify, answer } as tag strings
 
-function node(x, y, w, h, title, sub, cls = "node") {
-  const g = svg("g", { class: cls, transform: `translate(${x},${y})` });
-  g.append(svg("rect", { width: w, height: h, rx: 10 }));
-  g.append(svg("text", { x: w / 2, y: sub ? h / 2 - 3 : h / 2 + 4, "text-anchor": "middle" }, title));
-  if (sub) g.append(svg("text", { class: "sub", x: w / 2, y: h / 2 + 13, "text-anchor": "middle" }, sub));
-  return g;
+function tagFor(i) {
+  if (!TIMES) return i === 0 ? "encrypted" : "…";
+  return [TIMES.link, TIMES.hub, TIMES.gate, TIMES.search, TIMES.verify, TIMES.answer][i];
 }
-
-function drawFlow() {
-  const root = $("#flow");
+function stationTag(g, x, y, text) {
+  const w = text.length * 7.1 + 14;
+  const t = svg("g", { class: "tag" });
+  t.append(svg("rect", { x: x - w / 2, y, width: w, height: 19 }), svg("text", { x, y: y + 13.5, "text-anchor": "middle" }, text));
+  g.append(t);
+  return t;
+}
+function drawTransit() {
+  const root = $("#transit");
   if (!root) return;
-  const wide = root.clientWidth >= 640;
-  root.replaceChildren(root.querySelector("title") || svg("title", {}, "Data flow"));
-  const W = wide ? 1000 : 360, H = wide ? 330 : 560;
-  root.setAttribute("viewBox", `0 0 ${W} ${H}`);
-  const paths = svg("g"), nodes = svg("g"), dots = svg("g");
-  root.append(paths, dots, nodes);
-  let core, ins = [], outs = [];
+  const wide = root.clientWidth >= 600;
+  root.replaceChildren();
+  const delay = (i) => `${450 + i * 170}ms`;
   if (wide) {
-    core = { x: 410, y: 110, w: 180, h: 110 };
-    SOURCES.forEach(([t, s], i) => { const y = 14 + i * 62; nodes.append(node(20, y, 170, 46, t, s)); ins.push([190, y + 23]); });
-    OUTS.forEach(([t, s], i) => { const y = 64 + i * 80; nodes.append(node(810, y, 170, 46, t, s)); outs.push([810, y + 23]); });
-  } else {
-    core = { x: 90, y: 230, w: 180, h: 100 };
-    SOURCES.forEach(([t], i) => {
-      const row = i < 3 ? 0 : 1, col = i < 3 ? i : i - 3 + 0.5, x = 6 + col * 118, y = 10 + row * 60;
-      nodes.append(node(x, y, 112, 44, t, "")); ins.push([x + 56, y + 44]);
+    const W = 790, H = 480, ty = 240, xs = [250, 345, 445, 545, 640, 728];
+    root.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    ["Sources", "Link", "Hub", "Retrieval", "Answer"].forEach((h, i) =>
+      root.append(svg("text", { class: "colh", x: [40, 250, 345, 545, 728][i], y: 14, "text-anchor": i ? "middle" : "start" }, h.toUpperCase())));
+    const feed = (y) => `M40,${y} L${xs[0] - 70},${y} Q${xs[0] - 24},${y} ${xs[0] - 12},${(y + ty) / 2} T${xs[0]},${ty}`;
+    SOURCES.forEach((name, i) => {
+      const y = 70 + i * 68;
+      root.append(svg("path", { class: "rest", d: feed(y) }));
+      root.append(svg("rect", { class: "src", x: 35, y: y - 5, width: 10, height: 10 }));
+      root.append(svg("text", { class: "lab", x: 52, y: y - 10 }, name));
     });
-    OUTS.forEach(([t], i) => { const x = 6 + i * 118, y = 490; nodes.append(node(x, y, 112, 44, t.replace("Your ", ""), "")); outs.push([x + 56, y]); });
-  }
-  const cx = core.x + core.w / 2, cy = core.y + core.h / 2;
-  const cin = wide ? [core.x, cy] : [cx, core.y], cout = wide ? [core.x + core.w, cy] : [cx, core.y + core.h];
-  const curve = ([x1, y1], [x2, y2]) => wide
-    ? `M${x1},${y1} C${(x1 + x2) / 2},${y1} ${(x1 + x2) / 2},${y2} ${x2},${y2}`
-    : `M${x1},${y1} C${x1},${(y1 + y2) / 2} ${x2},${(y1 + y2) / 2} ${x2},${y2}`;
-  const all = [...ins.map((p) => curve(p, cin)), ...outs.map((p) => curve(cout, p))];
-  all.forEach((d, i) => {
-    const id = `fp${i}`;
-    const p = svg("path", { id, d, class: "path draw" });
-    paths.append(p);
-    p.style.setProperty("--len", Math.ceil(p.getTotalLength()));
-    p.style.animationDelay = `${i * 70}ms`;
-    // Constant motion is linear; each path carries two dots, half a cycle apart.
-    for (const off of [0, 1.6]) {
-      const c = svg("circle", { r: 3.2, class: "dot", opacity: 0 });
-      const begin = `${1.2 + i * 0.25 + off}s`;
-      c.append(svg("animateMotion", { dur: "3.2s", repeatCount: "indefinite", begin }, svg("mpath", { href: `#${id}` })));
-      c.append(svg("animate", { attributeName: "opacity", values: "0;1;1;0", keyTimes: "0;0.12;0.85;1",
-                                dur: "3.2s", repeatCount: "indefinite", begin }));
-      dots.append(c);
+    for (const [x, y2, label] of [[xs[1], 92, "audit log, sealed chain"], [xs[1], 392, "nightly verified backup"],
+                                  [xs[3], 122, "knowledge graph"], [xs[3], 380, "public copy, opt-in projects"]]) {
+      root.append(svg("line", { class: "rest", x1: x, y1: ty, x2: x, y2 }));
+      root.append(svg("circle", { class: "src", cx: x, cy: y2, r: 5 }));
+      root.append(svg("text", { class: "lab", x: x + 12, y: y2 + 4 }, label));
     }
-  });
-  const g = node(core.x, core.y, core.w, core.h, "one private memory", "on your laptop", "node core");
-  g.insertBefore(svg("rect", { class: "pulse", width: core.w, height: core.h, rx: 12 }), g.firstChild);
-  nodes.append(g);
+    const path = svg("path", { class: "path", d: `${feed(70)} L${xs[5]},${ty}` });
+    root.append(path);
+    path.style.setProperty("--len", Math.ceil(path.getTotalLength()));
+    root.append(svg("circle", { cx: 40, cy: 70, r: 7, fill: "var(--signal)" }));
+    STOP_NAMES.forEach((name, i) => {
+      const x = xs[i], below = i % 2 === 0;
+      const g = svg("g");
+      const ring = svg("circle", { class: "ring", cx: x, cy: ty, r: 10 });
+      ring.style.animationDelay = delay(i);
+      g.append(ring, svg("circle", { class: "hub", cx: x, cy: ty, r: 3.5 }));
+      const ly = below ? ty + 38 : ty - 32;
+      g.append(svg("text", { class: "stn", x, y: ly, "text-anchor": "middle", "paint-order": "stroke", stroke: "var(--paper)", "stroke-width": 5 }, name));
+      stationTag(g, x, ly + 7, tagFor(i)).style.animationDelay = delay(i);
+      root.append(g);
+    });
+  } else {
+    // Phones: the line runs down the page with labels on the right.
+    const W = 340, step = 66, top = 70, H = top + STOP_NAMES.length * step;
+    root.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    root.append(svg("rect", { class: "src", x: 16, y: 10, width: 220, height: 34 }));
+    root.append(svg("text", { class: "lab", x: 28, y: 32 }, "6 sources: sessions, chats, code"));
+    const path = svg("path", { class: "path", d: `M40,44 L40,${top + (STOP_NAMES.length - 1) * step}` });
+    root.append(path);
+    path.style.setProperty("--len", Math.ceil(path.getTotalLength()));
+    STOP_NAMES.forEach((name, i) => {
+      const y = top + i * step, g = svg("g");
+      const ring = svg("circle", { class: "ring", cx: 40, cy: y, r: 10 });
+      ring.style.animationDelay = delay(i);
+      g.append(ring, svg("circle", { class: "hub", cx: 40, cy: y, r: 3.5 }), svg("text", { class: "stn", x: 64, y: y + 5 }, name));
+      const tag = tagFor(i), w = tag.length * 7.1 + 14;
+      const t = svg("g", { class: "tag" });
+      t.append(svg("rect", { x: 160, y: y - 10, width: w, height: 19 }), svg("text", { x: 167, y: y + 4 }, tag));
+      t.style.animationDelay = delay(i);
+      g.append(t);
+      root.append(g);
+    });
+  }
 }
-let flowWide = null;
+let transitWide = null, rt;
 function maybeRedraw() {
-  const w = $("#flow")?.clientWidth >= 640;
-  if (w !== flowWide) { flowWide = w; drawFlow(); }
+  const w = $("#transit")?.clientWidth >= 600;
+  if (w !== transitWide) { transitWide = w; drawTransit(); }
+  drawRail();
 }
-maybeRedraw();
-let rt;
 addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(maybeRedraw, 150); });
+
+// A real search against the public copy, timed by stage on the server and as a round
+// trip here; its numbers fill the figure and the stops below.
+const SAMPLE = "how does the disclosure gate keep private data out of answers";
+async function measure() {
+  try {
+    const t0 = performance.now();
+    const res = await getJSON("/api/search?q=" + encodeURIComponent(SAMPLE));
+    const trip = performance.now() - t0, t = res.timings_ms || {};
+    const search = (t.embed || 0) + (t.vector || 0) + (t.bm25 || 0);
+    const hub = (t.hydrate || 0) + (t.audit || 0);
+    const verified = res.hits.filter((h) => h.status === "verified").length;
+    TIMES = { link: "encrypted", hub: ms(hub), gate: ms(t.gate), search: ms(search), verify: ms(t.verify), answer: `${res.hits.length} cited` };
+    drawTransit();
+    $("#fig-sum").textContent = `measured just now · ${ms(t.total)} on the server · ${ms(trip)} round trip`;
+    const docs = new Set(res.hits.map((h) => h.source)).size;
+    $("#came").replaceChildren(`${res.hits.length} passages from `, el("code", "", `${docs} documents`),
+      ", each with the file it came from and whether that file still says so.");
+    $("#metrics").replaceChildren(el("span", "", "question: ", el("b", "", `“${SAMPLE}”`)));
+    for (const [id, v] of [["#t-gate", ms(t.gate)], ["#t-search", ms(search)], ["#t-total", ms(t.total)],
+                           ["#t-verified", `${verified} of ${res.hits.length}`]]) { const n = $(id); if (n) n.textContent = v; }
+  } catch {
+    $("#fig-sum").textContent = "live memory offline: showing the layout only";
+    $("#came").textContent = "The owner's laptop is offline or restarting, so no live search could run. The figure shows the route a question takes.";
+  }
+}
+
+// ---- 1.0 the path, stop by stop: a rail that fills as you read --------------------------
+const STOP_SHORT = ["Sources", "SSH", "Hub", "Gate", "Search", "Verify", "Answer"];
+let railProgress = REDUCED ? 1 : 0;
+function drawRail() {
+  const root = $("#rail");
+  if (!root) return;
+  const W = root.clientWidth || 100, H = root.clientHeight || 500, n = STOP_SHORT.length, pad = 14;
+  const y = (i) => pad + (i * (H - 2 * pad)) / (n - 1);
+  root.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  root.replaceChildren(svg("line", { class: "bg", x1: 14, x2: 14, y1: y(0), y2: y(n - 1) }),
+                       svg("line", { class: "fg", id: "rail-fg", x1: 14, x2: 14, y1: y(0), y2: y(0) }));
+  STOP_SHORT.forEach((name, i) => {
+    root.append(svg("circle", { cx: 14, cy: y(i), r: 7, "data-i": i }));
+    if (W > 60) root.append(svg("text", { x: 30, y: y(i) + 4, "data-i": i }, name));
+  });
+  paintRail();
+}
+function paintRail() {
+  const root = $("#rail");
+  if (!root) return;
+  const H = root.clientHeight || 500, n = STOP_SHORT.length, pad = 14;
+  const fg = $("#rail-fg");
+  if (fg) fg.setAttribute("y2", pad + railProgress * (H - 2 * pad));
+  const reached = Math.round(railProgress * (n - 1) + 0.0001);
+  root.querySelectorAll("[data-i]").forEach((e) => e.classList.toggle("on", Number(e.dataset.i) <= reached));
+  document.querySelectorAll(".stop").forEach((s) => s.classList.toggle("on", REDUCED || Number(s.dataset.stop) <= reached));
+}
+function onScroll() {
+  const stops = [...document.querySelectorAll(".stop")];
+  if (!stops.length) return;
+  const mid = innerHeight * 0.5;
+  let p = 0;
+  stops.forEach((s, i) => {
+    const r = s.getBoundingClientRect();
+    if (r.top <= mid) p = i + Math.min(1, (mid - r.top) / Math.max(1, r.height));
+  });
+  railProgress = Math.min(1, Math.max(0, (p - 0.5) / (stops.length - 1)));
+  paintRail();
+}
+if (!REDUCED) {
+  let ticking = false;
+  addEventListener("scroll", () => {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(() => { ticking = false; onScroll(); });
+  }, { passive: true });
+}
+
+// ---- live status in the docket ---------------------------------------------------
+async function liveStatus() {
+  try {
+    const st = await getJSON("/api/stats");
+    STATS = st;
+    $("#status").replaceChildren(el("i", "live"), st.answer_model === "local" ? "live, answer model on" : "live, excerpts only");
+    if (st.exported) $("#exported").textContent = `${st.exported.slice(0, 4)}-${st.exported.slice(4, 6)}-${st.exported.slice(6, 8)} ${st.exported.slice(9, 11)}:${st.exported.slice(11, 13)} UTC`;
+    const n = $("#t-chunks"); if (n) n.textContent = fmt(st.chunks);
+    $("#docno").textContent = `Report · ${new Date().toISOString().slice(0, 10)}`;
+  } catch {
+    $("#status").replaceChildren(el("i", "live off"), "laptop offline or restarting");
+  }
+}
 
 // ---- technical details: the ten stages --------------------------------------------
 let PIPE = null, STATS = null, current = 0;
@@ -393,3 +491,7 @@ document.querySelectorAll("pre").forEach((pre) => {
 });
 
 if ($("#pipeline")) loadPipeline().catch(() => { $("#pipeline").replaceChildren(el("li", "muted", "Could not load the technical details.")); });
+
+// ---- start --------------------------------------------------------------------------
+maybeRedraw();
+if ($("#transit")) { measure(); liveStatus(); onScroll(); }

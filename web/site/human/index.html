@@ -3,177 +3,190 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Context Memory Harness</title>
-<meta name="description" content="One private memory for every AI assistant you use: your sessions, chats, code and notes, on your own laptop, with sources attached.">
+<title>Context Memory</title>
+<meta name="description" content="One local memory that every AI model you use can search, with sources, without your data leaving your laptop.">
 <link rel="alternate" type="text/markdown" href="/overview.md">
 <link rel="describedby" href="/llms.txt">
 <link rel="icon" href="data:,">
+<link rel="preload" href="/fonts/IBMPlexSans-Bold.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/site.css">
 </head>
 <body>
-<a class="skip" href="#how">Skip to how it works</a>
-<header class="wrap top">
-  <a class="brand" href="/">context&#8209;memory</a>
+<a class="skip" href="#path">Skip to how it works</a>
+<header class="top">
+  <a class="brand" href="/"><i aria-hidden="true"></i>Context Memory</a>
+  <span class="docno mono" id="docno">Report · live</span>
   <nav class="links" aria-label="Site">
-    <a href="#how">How it works</a><a href="#hard">Design</a><a href="#ask">Ask</a><a href="/guide">Get it</a>
+    <a href="#path"><span class="mono">1.0</span> Path</a><a href="#questions"><span class="mono">2.0</span> Questions</a>
+    <a href="#privacy"><span class="mono">3.0</span> Privacy</a><a href="#ask"><span class="mono">4.0</span> Ask it</a>
+    <a class="btn ink" href="/guide">Install</a>
     <button class="theme" id="theme" type="button" aria-label="Colour theme: system">
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="5"/><path d="M12 1v3M12 20v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M1 12h3M20 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>
     </button>
   </nav>
 </header>
 
-<section class="wrap hero" aria-labelledby="title">
-  <p class="eyebrow">Open-source · runs on your own laptop</p>
-  <h1 id="title">Your AI assistants<br>finally remember.</h1>
-  <p class="lede">Context Memory gathers your coding sessions, AI chats, code and notes from every machine into one
-    private memory on your laptop. Any assistant can search it, and every answer shows where it came from.</p>
-  <nav class="cta">
-    <a class="btn primary" href="/guide">Get it running <span aria-hidden="true">→</span></a>
-    <a class="btn" href="#ask">Ask it a question</a>
-  </nav>
-  <figure class="flow" aria-label="Your sources flow into one private memory, which serves your assistants">
-    <svg id="flow" role="img"><title>Sources flow into one local memory, which serves assistants, the owner's console and this site</title></svg>
+<section class="hero" aria-labelledby="title">
+  <div class="panel">
+    <dl class="docket">
+      <div><dt>Subject</dt><dd>one memory for every model</dd></div>
+      <div><dt>Status</dt><dd id="status"><i class="live" aria-hidden="true"></i>checking…</dd></div>
+      <div><dt>Public copy</dt><dd id="exported">–</dd></div>
+    </dl>
+    <h1 id="title">Every model you use, remembering the same things.</h1>
+    <p class="lede">Claude Code on three machines, chats in claude.ai and Perplexity, your code and notes. One local
+      memory that each of them can search, with sources, without your data leaving the laptop.</p>
+    <div class="install">
+      <p class="label">Install on your machine</p>
+      <pre class="quick"><code>git clone https://github.com/p-doshi/context-memory
+cd context-memory &amp;&amp; uv sync --locked --extra embed
+uv run cmh init --code ~/my-repo --download-model</code></pre>
+      <a class="arrow" href="/guide">Full guide, with a check after every step →</a>
+    </div>
+  </div>
+  <figure class="fig" aria-labelledby="fig1">
+    <figcaption class="fighead"><b id="fig1">Figure 1. One question, end to end</b><span class="mono" id="fig-sum">measuring…</span></figcaption>
+    <svg id="transit" role="img" aria-label="A question's path: from a Claude Code session over the SSH link to the hub, through the disclosure gate, search and verification, to a cited answer"></svg>
+    <div class="key"><span><i class="k-path"></i>This question's path</span><span><i class="k-rest"></i>Everything else the memory keeps</span></div>
+    <div class="came">
+      <p class="label signal">What came back</p>
+      <p class="came-text" id="came">A live search runs against the public copy when this page opens.</p>
+      <p class="metrics mono" id="metrics"></p>
+      <p class="fine mono" id="fine">Timings are measured on this request, on the owner's laptop. The SSH link is drawn for a remote
+        Claude Code session; this page's own question arrives through the public tunnel instead.</p>
+    </div>
   </figure>
 </section>
 
-<main class="wrap">
-  <section class="reveal" aria-labelledby="problem-h">
-    <p class="kicker">The problem</p>
-    <h2 id="problem-h">Every conversation starts from zero.</h2>
-    <div class="cards three">
-      <article class="card"><span class="ico" aria-hidden="true">01</span>
-        <h3>Assistants forget</h3>
-        <p>Close a session and the decisions, dead ends and fixes are gone. Next time you explain it all again.</p></article>
-      <article class="card"><span class="ico" aria-hidden="true">02</span>
-        <h3>Context is scattered</h3>
-        <p>Sessions on a laptop, a cluster and lab servers; two Claude accounts; Perplexity threads; repositories and notes. No single place knows it all.</p></article>
-      <article class="card"><span class="ico" aria-hidden="true">03</span>
-        <h3>Pasting context is costly</h3>
-        <p>Copying background into every prompt burns tokens and time, and the sensitive parts go along with it.</p></article>
+<main>
+  <!-- 1.0 the path, stop by stop (scroll-driven) -->
+  <section class="story" id="path" aria-labelledby="path-h">
+    <div class="story-head wrap">
+      <p class="label"><span class="mono">1.0</span> The path</p>
+      <h2 id="path-h">Six stops. Each one answers a worry.</h2>
+    </div>
+    <div class="story-grid wrap">
+      <div class="rail" aria-hidden="true"><svg id="rail"></svg></div>
+      <ol class="stops">
+        <li class="stop" data-stop="0"><p class="mono n">01 · Sources</p><h3>Everything you already use</h3>
+          <p>Claude Code sessions from every machine, claude.ai and Perplexity chats, git repositories and Markdown notes.
+            Nothing changes in how you work; the memory reads what is already there.</p>
+          <p class="proof mono">sources today: <b>6</b></p></li>
+        <li class="stop" data-stop="1"><p class="mono n">02 · SSH link</p><h3>Security? Nothing is open to the internet.</h3>
+          <p>Other machines reach the memory through SSH, each with its own key and a token you can revoke. The memory
+            listens only on the laptop itself; SSH accepts the home network only, and a firewall rule stops the
+            memory's own software from calling out.</p>
+          <p class="proof mono">ports open to the internet: <b>0</b></p></li>
+        <li class="stop" data-stop="2"><p class="mono n">03 · Hub</p><h3>Who is asking, and what may they see?</h3>
+          <p>Every request carries a device token with a scope: read, write, upload, or admin. Every call is written to a
+            tamper-evident log where each entry seals the one before it.</p>
+          <p class="proof mono">scopes: <b>read · write · upload · admin</b></p></li>
+        <li class="stop" data-stop="3"><p class="mono n">04 · Disclosure gate</p><h3>Privacy? Personal details are cut out first.</h3>
+          <p>Before anything reaches a cloud model, a filter outside any AI removes e-mail addresses, phone numbers,
+            street addresses, GPS coordinates, card and bank numbers, ID numbers and passwords.</p>
+          <p class="proof mono">gate on this request: <b id="t-gate">–</b></p></li>
+        <li class="stop" data-stop="4"><p class="mono n">05 · Search</p><h3>Latency? It runs on a laptop GPU.</h3>
+          <p>Meaning-based search and keyword search run together and their rankings are merged, so exact names and fuzzy
+            questions both work. On 30 test questions the right document was in the top five 90% of the time.</p>
+          <p class="proof mono">search on this request: <b id="t-search">–</b></p></li>
+        <li class="stop" data-stop="5"><p class="mono n">06 · Verify</p><h3>Accuracy? Old facts mark themselves.</h3>
+          <p>Each passage carries its source. Passages from files are re-checked against the file when used and marked
+            verified, stale or missing, so an assistant can tell current knowledge from outdated.</p>
+          <p class="proof mono">verified on this request: <b id="t-verified">–</b></p></li>
+        <li class="stop" data-stop="6"><p class="mono n">07 · Answer</p><h3>Cost? Nothing per question.</h3>
+          <p>The assistant gets the best passages with their sources. The embedding model and this site's answer model
+            share one 6 GB laptop graphics card: no paid API, no subscription.</p>
+          <p class="proof mono">monthly cost: <b>$0</b></p></li>
+      </ol>
     </div>
   </section>
 
-  <section class="reveal" id="how" aria-labelledby="how-h">
-    <p class="kicker">How it works</p>
-    <h2 id="how-h">Four steps, all on your machine.</h2>
-    <ol class="steps4">
-      <li><span class="n">1</span><h3>Capture</h3>
-        <p>Sessions from every machine arrive over an encrypted SSH link; chats, code and notes are read where they live.</p></li>
-      <li><span class="n">2</span><h3>Understand</h3>
-        <p>Everything is split into passages, turned into searchable vectors by a model on your own GPU, and linked into a knowledge graph.</p></li>
-      <li><span class="n">3</span><h3>Remember</h3>
-        <p>One store on your laptop. When a file changes, the old version is retired, not deleted, so history survives.</p></li>
-      <li><span class="n">4</span><h3>Answer</h3>
-        <p>Any assistant asks; it gets the relevant passages, where each came from, and whether the source file still says so.</p></li>
-    </ol>
-  </section>
-
-  <section class="reveal" id="hard" aria-labelledby="hard-h">
-    <p class="kicker">Design</p>
-    <h2 id="hard-h">The hard parts, and how they're handled.</h2>
-    <div class="cards two">
-      <article class="card hard"><h3>Privacy</h3>
-        <p class="q">Notes and chats hold names, addresses, unpublished work.</p>
-        <p>Everything stays on your laptop: no cloud database, no hosted AI service in between. Before anything reaches a
-          cloud assistant, a privacy filter replaces contact details, precise locations, card numbers and passwords.</p>
-        <p class="proof"><b>0</b> cloud databases or hosted AI models</p></article>
-      <article class="card hard"><h3>Security</h3>
-        <p class="q">A memory reachable from anywhere is a target.</p>
-        <p>Other machines connect only through SSH, each with its own access token you can revoke. The private memory
-          never faces the internet, and a firewall rule stops the memory's own software from opening outside
-          connections. This website runs from a
-          separate copy holding only what was chosen for publication.</p>
-        <p class="proof"><b>2</b> separate stores: private, and public-only</p></article>
-      <article class="card hard"><h3>Speed</h3>
-        <p class="q">Search has to feel instant inside an assistant's workflow.</p>
-        <p>Vectors are held in memory and keyword search is narrowed before ranking. Measured on a laptop: a warm search
-          returns in about a sixth of a second, and in about a fifth from a remote lab server through the SSH tunnel.</p>
-        <p class="proof"><b>152&nbsp;ms</b> median search on the laptop · 219&nbsp;ms remote</p></article>
-      <article class="card hard"><h3>Trust</h3>
-        <p class="q">An AI's answer can't be taken on faith.</p>
-        <p>Every passage carries its source. Passages from files are re-checked against the file when they are used and
-          marked verified, stale or missing, so outdated knowledge shows itself.</p>
-        <p class="proof"><b>3</b> states on every file passage: verified · stale · missing</p></article>
-      <article class="card hard"><h3>Accuracy</h3>
-        <p class="q">Exact names and fuzzy questions need different kinds of search.</p>
-        <p>Meaning-based search and keyword search run together and their rankings are merged. On 30 test questions the
-          right document was in the top five 90% of the time, against 75% for meaning alone (small test, wide error bars).</p>
-        <p class="proof"><b>90%</b> top-5 hit rate, combined search</p></article>
-      <article class="card hard"><h3>Cost</h3>
-        <p class="q">It should run on hardware you already own.</p>
-        <p>The embedding model and this site's answer model both run on one 6&nbsp;GB laptop graphics card. No paid APIs,
-          no subscription, no per-question fees.</p>
-        <p class="proof"><b>6&nbsp;GB</b> GPU (GTX 1660 Ti) does all of it</p></article>
+  <!-- 2.0 questions -->
+  <section class="wrap sec" id="questions" aria-labelledby="q-h">
+    <div class="band-head">
+      <div><p class="label"><span class="mono">2.0</span> Questions</p><h2 id="q-h">What people ask first.</h2></div>
+      <p class="side">Short answers, each with the number behind it. Live numbers come from the running system; the
+        others from the project's own measurements, linked in the technical details below.</p>
+    </div>
+    <div class="qa">
+      <article><p class="mono n">01</p><h3>Where does my data live?</h3>
+        <p>In one SQLite file and one vector index on your laptop, outside synced folders. Daily snapshots are verified
+          by re-reading them.</p><p class="proof mono">cloud databases: <b>0</b></p></article>
+      <article><p class="mono n">02</p><h3>Which companies see it?</h3>
+        <p>Only the assistants you already use see what you ask them, filtered by the gate. The full list of outside
+          parties, and what each receives, is published in the repository.</p><p class="proof mono">hosted AI in between: <b>0</b></p></article>
+      <article><p class="mono n">03</p><h3>How fast is it?</h3>
+        <p>A warm search on the laptop took 152 ms at the median, and 219 ms from a lab server through the SSH tunnel.</p>
+        <p class="proof mono">this page's search: <b id="t-total">–</b></p></article>
+      <article><p class="mono n">04</p><h3>Can an answer be wrong?</h3>
+        <p>Yes, which is why every answer cites its passages and every file passage says whether the file still matches.</p>
+        <p class="proof mono">states: <b>verified · stale · missing</b></p></article>
+      <article><p class="mono n">05</p><h3>What does it run on?</h3>
+        <p>A laptop with a 6 GB graphics card (a GTX 1660 Ti here). It runs around the clock as a background service.</p>
+        <p class="proof mono">public passages searchable now: <b id="t-chunks">–</b></p></article>
+      <article><p class="mono n">06</p><h3>Do my agents need changes?</h3>
+        <p>No. Claude Code connects to it as an MCP server. Agents reading this site get Markdown and JSON instead of this page.</p>
+        <p class="proof mono">tools: <b>search · get · context</b></p></article>
     </div>
   </section>
 
-  <section class="reveal" aria-labelledby="gate-h">
-    <p class="kicker">Privacy, live</p>
-    <h2 id="gate-h">Who sees what?</h2>
-    <p class="muted">Say your memory holds a note like one of these. Pick one to see what each reader gets back.
-      (The examples are fixed on purpose: a free-text box would let anyone probe the filter for gaps.)</p>
-    <div class="suggest" id="gate-presets" role="group" aria-label="Example notes">
+  <!-- 3.0 privacy, live -->
+  <section class="wrap sec" id="privacy" aria-labelledby="gate-h">
+    <div class="band-head">
+      <div><p class="label"><span class="mono">3.0</span> Privacy, live</p><h2 id="gate-h">Who sees what?</h2></div>
+      <p class="side">Say your memory holds a note like one of these. Pick one to see what each reader gets back. The
+        examples are fixed on purpose: a free-text box would let anyone probe the filter for gaps.</p>
+    </div>
+    <div class="chips" id="gate-presets" role="group" aria-label="Example notes">
       <button type="button" class="chip" data-example="contact" aria-pressed="true">Contact details</button>
       <button type="button" class="chip" data-example="address">An address</button>
       <button type="button" class="chip" data-example="location">GPS coordinates</button>
       <button type="button" class="chip" data-example="card">A card number</button>
     </div>
     <div class="gate-out" id="gate-out"></div>
-    <p class="muted small">The filter recognises e-mail addresses (also written as "name [at] host [dot] ca"), phone
-      numbers, street addresses, postal codes, GPS coordinates, card numbers and IBANs, Canadian SIN and US SSN numbers,
-      dates of birth, and passwords or keys. It does not recognise names, schedules or relationships.</p>
+    <p class="fine">The filter recognises e-mail addresses (also written as "name [at] host [dot] ca"), phone numbers,
+      street addresses, postal codes, GPS coordinates, card numbers and IBANs, Canadian SIN and US SSN numbers, dates of
+      birth, and passwords or keys. It does not recognise names, schedules or relationships.</p>
   </section>
 
-  <section class="reveal" aria-labelledby="ask-h" id="ask">
-    <p class="kicker">Ask</p>
-    <h2 id="ask-h">Ask how it works.</h2>
-    <p class="muted" id="ask-note">A small model on the owner's laptop answers from this project's public documentation,
-      and cites what it used. Each question is answered on its own, with your previous question as context.</p>
+  <!-- 4.0 ask -->
+  <section class="wrap sec" id="ask" aria-labelledby="ask-h">
+    <div class="band-head">
+      <div><p class="label"><span class="mono">4.0</span> Ask it</p><h2 id="ask-h">Ask how it works.</h2></div>
+      <p class="side" id="ask-note">A small model on the owner's laptop answers from this project's public documentation
+        and cites what it used.</p>
+    </div>
     <div class="chat">
       <div id="log" class="log" aria-live="polite">
-        <div class="msg bot">Hi! I can explain how the memory works: privacy, speed, setup, the design choices. What would you like to know?</div>
+        <div class="msg bot">Ask me about privacy, speed, setup or the design choices.</div>
       </div>
-      <div class="suggest" id="suggest">
+      <div class="chips" id="suggest">
         <button type="button" class="chip">How is private data kept out of answers?</button>
         <button type="button" class="chip">Why does search use two methods?</button>
         <button type="button" class="chip">How do other machines reach the memory?</button>
       </div>
-      <form id="ask-form" class="row composer">
+      <form id="ask-form" class="composer">
         <label class="sr" for="question">Your question</label>
         <input id="question" maxlength="500" autocomplete="off" placeholder="Ask anything about the project">
-        <button class="btn primary" type="submit" aria-label="Send">Ask</button>
+        <button class="btn ink" type="submit">Ask</button>
       </form>
     </div>
   </section>
 
-  <section class="reveal band" aria-labelledby="get-h">
-    <div>
-      <p class="kicker">Get it</p>
-      <h2 id="get-h">Running in six commands.</h2>
-      <p class="muted">No code to write. Each step ends with a check you can see.</p>
-      <a class="btn primary" href="/guide">Open the guide <span aria-hidden="true">→</span></a>
-    </div>
-    <pre class="quickstart"><code><span class="c"># after installing uv</span>
-git clone https://github.com/p-doshi/context-memory
-cd context-memory &amp;&amp; uv sync --locked --extra embed
-uv run cmh init --code ~/my-repo --download-model
-uv run cmh daemon --once
-uv run cmh search "how did I set up training"</code></pre>
-  </section>
-
-  <section class="reveal" aria-labelledby="pipe-h">
+  <section class="wrap sec" aria-labelledby="pipe-h">
     <details class="tech">
-      <summary><span id="pipe-h">Technical details: the ten stages</span>
-        <span class="muted small" id="livecount"></span></summary>
+      <summary><span id="pipe-h">Technical details: the ten stages, with code and citations</span>
+        <span class="mono fine" id="livecount"></span></summary>
       <ol class="pipeline" id="pipeline"></ol>
       <article class="detail" id="detail" aria-live="polite"></article>
     </details>
   </section>
 </main>
 
-<footer class="wrap foot muted small">
-  <p><a id="repo" href="#">Source code</a> · <a href="/guide">Guide</a> · MIT licence ·
-    Agents: <a href="/overview.md">Markdown</a>, <a href="/pipeline.json">JSON</a>, <a href="/llms.txt">llms.txt</a></p>
+<footer class="foot">
+  <p class="mono"><a id="repo" href="#">Source code</a> · <a href="/guide">Guide</a> · MIT licence ·
+    Agents: <a href="/overview.md">Markdown</a>, <a href="/pipeline.json">JSON</a>, <a href="/llms.txt">llms.txt</a> ·
+    Fonts: IBM Plex (SIL OFL), served from this site</p>
 </footer>
 <script src="/site.js"></script>
 </body>

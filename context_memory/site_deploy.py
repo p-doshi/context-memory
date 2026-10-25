@@ -35,6 +35,9 @@ def write_deploy(out: Path, api_host: str) -> list[str]:
         if old.name != ".git":
             shutil.rmtree(old) if old.is_dir() else old.unlink()
     shutil.copytree(SITE, out, dirs_exist_ok=True)
+    fonts = SITE.parent / "fonts"  # self-hosted IBM Plex, with its licence
+    if fonts.is_dir():
+        shutil.copytree(fonts, out / "fonts", dirs_exist_ok=True)
     vj = out / "vercel.json"
     vj.write_text(vj.read_text().replace("API_HOST", api_host))
     (out / "config.json").write_text(json.dumps({"api": f"https://{api_host}"}) + "\n")

@@ -79,7 +79,8 @@ def search(svc, sources, query: str, k: int = 8, mode: str | None = None) -> dic
         hits[-1]["where"] = _where(hits[-1])
         if len(hits) >= k:
             break
-    return {"hits": hits}
+    # Per-stage times of this search, for the site's "one question, end to end" figure.
+    return {"hits": hits, "timings_ms": res.get("timings_ms", {})}
 
 
 def projects(svc, sources) -> list[dict]:

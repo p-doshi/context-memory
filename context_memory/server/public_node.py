@@ -34,7 +34,9 @@ SITE = Path(__file__).resolve().parents[2] / "web" / "site"
 PAGES = {"/": "index", "/guide": "guide"}
 STATIC_TYPES = {".html": "text/html; charset=utf-8", ".css": "text/css", ".js": "text/javascript",
                 ".json": "application/json", ".md": "text/markdown; charset=utf-8",
-                ".txt": "text/plain; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png"}
+                ".txt": "text/plain; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png",
+                ".woff2": "font/woff2"}
+FONTS = SITE.parent / "fonts"  # self-hosted IBM Plex (SIL OFL), shared with the console
 AGENT_UA = re.compile(r"bot|crawl|spider|slurp|curl|wget|httpie|python|httpx|aiohttp|node-fetch|undici|"
                       r"axios|go-http|java/|okhttp|claude|anthropic|openai|gpt|perplexity|gemini|"
                       r"cohere|mistral|llama|agent|mcp", re.I)
@@ -177,6 +179,7 @@ def build_app(settings: Settings, root: Path, hub_url: str, token: str,
     waiting = [0]
     static = {p.relative_to(SITE).as_posix(): p for p in SITE.rglob("*")
               if p.is_file() and p.suffix in STATIC_TYPES and p.name != "vercel.json"}
+    static.update({f"fonts/{p.name}": p for p in FONTS.glob("*.woff2")})
 
     def client_ip(request: Request) -> str:
         peer = request.client.host if request.client else ""
@@ -405,4 +408,14 @@ def serve(settings: Settings, host: str = "127.0.0.1", port: int = 8787) -> None
     hub_url = f"http://127.0.0.1:{settings.hub_port}"
     app = build_app(settings, root, hub_url, token, llm_url=settings.public_llm_url or None,
                     llm_key=broker.get_secret("llm-server-key"))
+
+    def warm():
+        # One search after start-up opens the store and warms the embedder path, so the
+        # first visitor's figure shows normal timings (cold: ~2.5 s; warm: ~0.25 s, measured).
+        import urllib.request
+        try:
+            urllib.request.urlopen(f"http://127.0.0.1:{port}/api/search?q=disclosure+gate", timeout=60).read()
+        except OSError as e:
+            log.info("warm-up search failed: %r", e)
+    threading.Timer(8, warm).start()
     uvicorn.run(app, host=host, port=port, log_level="warning")

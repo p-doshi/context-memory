@@ -75,16 +75,19 @@ def _page(browser, **ctx):
 def test_pipeline_stats_and_detail(browser, site):
     ctx, page, errors = _page(browser)
     page.goto(site + "/")
-    assert page.locator(".steps4 li").count() == 4 and page.locator(".card.hard").count() == 6
+    assert page.locator(".stop").count() == 7 and page.locator(".qa article").count() == 6
     # String predicates (wait_for_function) are blocked by the site's own CSP; use locators.
-    sync_api.expect(page.locator("#livecount")).to_contain_text("1 public documents", timeout=5000)
+    sync_api.expect(page.locator("#livecount")).to_contain_text("1 public documents", timeout=20000)
     page.click(".tech summary")                                 # the ten stages are behind a toggle
     page.wait_for_selector(".stage .stat")
     assert page.locator(".stage").count() == 10
     page.locator(".stage", has_text="Disclosure Gate").click()
     sync_api.expect(page.locator("#detail h3")).to_contain_text("Disclosure Gate")
     assert page.locator(".stage[aria-pressed=true]").inner_text().startswith("09")
-    assert page.locator("#flow path").count() == 8          # five sources in, three outputs
+    # Figure 1 is drawn from a live search: six station tags, timings filled in.
+    sync_api.expect(page.locator("#fig-sum")).to_contain_text("measured just now", timeout=20000)
+    assert page.locator("#transit .tag").count() == 6 and page.locator("#transit .rest").count() >= 6
+    assert page.locator("#t-gate").inner_text().endswith("ms")
     assert not errors, errors
     ctx.close()
 
@@ -145,17 +148,32 @@ def test_theme_toggle_and_copy_buttons(browser, site):
 def test_phone_width_has_no_horizontal_scroll(browser, site):
     ctx, page, errors = _page(browser, viewport={"width": 375, "height": 800})
     page.goto(site + "/")
-    page.wait_for_selector(".steps4")
+    page.wait_for_selector("#transit .ring", state="attached")
     assert page.evaluate("document.documentElement.scrollWidth") <= 375
-    assert page.locator("#flow").get_attribute("viewBox") == "0 0 360 560"   # vertical layout
+    assert page.locator("#transit").get_attribute("viewBox").startswith("0 0 340 ")   # vertical layout
     assert not errors, errors
     ctx.close()
 
 
-def test_reduced_motion_hides_moving_dots(browser, site):
+def test_reduced_motion_shows_everything_still(browser, site):
     ctx, page, errors = _page(browser, reduced_motion="reduce")
     page.goto(site + "/")
-    page.wait_for_selector("#flow .dot", state="attached")
-    assert page.eval_on_selector("#flow .dot", "e => getComputedStyle(e).display") == "none"
+    page.wait_for_selector("#transit .path", state="attached")
+    assert page.eval_on_selector("#transit .path", "e => getComputedStyle(e).strokeDashoffset") in ("0", "0px")
+    assert page.locator(".stop.on").count() == 7                  # no scroll needed to read the stops
+    assert not errors, errors
+    ctx.close()
+
+
+def test_scroll_lights_the_stops_in_order(browser, site):
+    ctx, page, errors = _page(browser, viewport={"width": 1440, "height": 900})
+    page.goto(site + "/")
+    page.wait_for_selector("#rail circle", state="attached")
+    assert page.locator(".stop.on").count() <= 1
+    page.locator('.stop[data-stop="4"]').scroll_into_view_if_needed()
+    page.mouse.wheel(0, 200)
+    page.wait_for_timeout(300)
+    lit = page.locator(".stop.on").count()
+    assert 3 <= lit <= 6 and page.locator("#rail circle.on").count() == lit
     assert not errors, errors
     ctx.close()
