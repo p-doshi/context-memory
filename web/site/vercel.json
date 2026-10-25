@@ -1,5 +1,4 @@
 {
-  "cleanUrls": true,
   "rewrites": [
     {
       "source": "/",
@@ -8,7 +7,7 @@
           "type": "header",
           "key": "user-agent",
           "value": {
-            "re": "[Bb]ot|[Cc]rawl|[Ss]pider|curl|[Ww]get|[Pp]ython|httpx|aiohttp|node-fetch|undici|axios|Go-http|okhttp|[Cc]laude|[Aa]nthropic|OpenAI|GPT|[Pp]erplexity|Gemini|[Cc]ohere|[Mm]istral|[Aa]gent|MCP"
+            "re": ".*([Bb]ot|[Cc]rawl|[Ss]pider|curl|[Ww]get|[Pp]ython|httpx|aiohttp|node-fetch|undici|axios|Go-http|okhttp|[Cc]laude|[Aa]nthropic|OpenAI|GPT|[Pp]erplexity|Gemini|[Cc]ohere|[Mm]istral|[Aa]gent|MCP).*"
           }
         }
       ],
@@ -21,7 +20,7 @@
           "type": "header",
           "key": "accept",
           "value": {
-            "re": "text/html"
+            "re": ".*(text/html).*"
           }
         }
       ],
@@ -34,7 +33,7 @@
           "type": "header",
           "key": "user-agent",
           "value": {
-            "re": "[Bb]ot|[Cc]rawl|[Ss]pider|curl|[Ww]get|[Pp]ython|httpx|aiohttp|node-fetch|undici|axios|Go-http|okhttp|[Cc]laude|[Aa]nthropic|OpenAI|GPT|[Pp]erplexity|Gemini|[Cc]ohere|[Mm]istral|[Aa]gent|MCP"
+            "re": ".*([Bb]ot|[Cc]rawl|[Ss]pider|curl|[Ww]get|[Pp]ython|httpx|aiohttp|node-fetch|undici|axios|Go-http|okhttp|[Cc]laude|[Aa]nthropic|OpenAI|GPT|[Pp]erplexity|Gemini|[Cc]ohere|[Mm]istral|[Aa]gent|MCP).*"
           }
         }
       ],
@@ -47,7 +46,7 @@
           "type": "header",
           "key": "accept",
           "value": {
-            "re": "text/html"
+            "re": ".*(text/html).*"
           }
         }
       ],
