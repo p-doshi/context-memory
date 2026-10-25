@@ -23,7 +23,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from context_memory.config import Settings, get_settings
-from context_memory.ingestion.claude_code import ingest_config_dir
+from context_memory.ingestion.claude_code import ingest_config_dir, ingest_session
 from context_memory.ingestion.claude_export import import_export
 from context_memory.ingestion.code import ingest_codebase
 from context_memory.ingestion.markdown import ingest_markdown_dir
@@ -96,6 +96,9 @@ def run_pass(svc, settings: Settings) -> dict:
         summary[f"docs:{src.project}"] = _summarize(res)
 
     summary.update(process_inbox(svc, settings.data_dir.parent / "inbox", sources))
+    remote = process_remote_inbox(svc, settings.data_dir.parent, sources.claude_project_map)
+    if remote:
+        summary["remote_sessions"] = remote
     summary.update(browser_syncs(svc, settings, sources))
     # Every ingest appends a small LanceDB fragment; vector search slows as they
     # pile up (456 fragments: ~100 ms per search, measured). Compact regularly.
@@ -148,6 +151,35 @@ def gpu_status() -> dict | None:
         return {"temp_c": t, "util_pct": u, "mem_mb": m, "sm_mhz": c}
     except (OSError, ValueError, subprocess.SubprocessError):
         return None
+
+
+def process_remote_inbox(svc, home: Path, project_map: dict[str, str]) -> dict:
+    """Index transcripts the hub received from other machines
+    (<home>/inbox/remote/<device>/<project dir>/<session>.jsonl + .meta.json).
+    A state file remembers each file's mtime so unchanged uploads are skipped."""
+    root = home / "inbox" / "remote"
+    if not root.is_dir():
+        return {}
+    state_file = home / "run" / "remote-inbox.json"
+    state = json.loads(state_file.read_text()) if state_file.exists() else {}
+    results: list[dict] = []
+    for path in sorted(root.glob("*/*/*.jsonl")):
+        key, mtime = str(path), path.stat().st_mtime
+        if state.get(key) == mtime:
+            continue
+        meta_file = path.with_suffix(".meta.json")
+        meta = json.loads(meta_file.read_text()) if meta_file.exists() else {}
+        account = meta.get("account") or path.parent.parent.name
+        try:
+            r = ingest_session(svc, path, account, project_map, actor="daemon")
+            results.append(r)
+            state[key] = mtime
+        except Exception as e:  # one bad upload must not stop the others
+            log.warning("remote session %s: %r", path, e)
+            results.append({"status": "error"})
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    state_file.write_text(json.dumps(state))
+    return _summarize(results) if results else {}
 
 
 def process_inbox(svc, inbox: Path, sources) -> dict:

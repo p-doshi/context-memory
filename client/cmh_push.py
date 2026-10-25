@@ -202,7 +202,8 @@ def status(cfg):
     print("token_file:", cfg["token_file"], "(exists)" if Path(cfg["token_file"]).expanduser().exists() else "(missing)")
     print("account:   ", cfg.get("account", "(hub default)"))
     print("claude_dir:", cfg["claude_dir"])
-    print("queued:    ", len(QUEUE.read_text().splitlines()) if QUEUE.exists() else 0)
+    queued = {json.loads(l)["path"] for l in QUEUE.read_text().splitlines() if l.strip()} if QUEUE.exists() else set()
+    print("queued:    ", len(queued), "transcript(s)")
     print("sent:      ", len(sent_state()))
     if cfg.get("hub_url"):
         req = urllib.request.Request(cfg["hub_url"].rstrip("/") + "/v1/health")

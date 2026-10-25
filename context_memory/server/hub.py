@@ -18,6 +18,7 @@ embedding model with the daemon (the model serialises GPU use internally).
 from __future__ import annotations
 
 import gzip
+import json
 import os
 import hashlib
 import re
@@ -28,7 +29,7 @@ from pathlib import Path
 
 from context_memory.config import Settings
 from context_memory.memory.embedder import Embedder
-from context_memory.memory.service import IngressRejected, MemoryService
+from context_memory.memory.service import MemoryService
 from context_memory.memory.sqlite_store import SQLiteStore
 from context_memory.util import NO_WINDOW, new_id, slugify, utcnow
 
@@ -115,7 +116,6 @@ def build_app(settings: Settings, embedder: Embedder, service: MemoryService | N
     from starlette.requests import Request
     from starlette.responses import JSONResponse
 
-    from context_memory.ingestion.claude_code import ingest_session
     from context_memory.server.mcp_server import build_mcp
     from context_memory.sources import load_sources
 
@@ -157,19 +157,21 @@ def build_app(settings: Settings, embedder: Embedder, service: MemoryService | N
             body = gzip.decompress(body)
             if len(body) > MAX_UPLOAD_BYTES:
                 return JSONResponse({"error": "transcript too large"}, status_code=413)
+        # Store and return at once; the daemon indexes it on its next pass.
+        # Ingesting here (minutes for a long session, under the hub lock) froze
+        # auth, health and search for every other client (observed).
         dest = inbox / dev["name"] / project_dir / f"{session_id}.jsonl"
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(body)
+        tmp = dest.with_suffix(".part")
+        tmp.write_bytes(body)
         account = request.headers.get("x-account") or dev["account"] or dev["name"]
+        dest.with_suffix(".meta.json").write_text(json.dumps(
+            {"device": dev["name"], "account": slugify(account, dev["name"]), "received_at": utcnow()}))
+        tmp.replace(dest)
         with lock:
-            try:
-                project_map = load_sources(settings.resolved_sources_file).claude_project_map
-                r = ingest_session(svc, dest, slugify(account, dev["name"]), project_map, actor="hub")
-                svc.sqlite.audit("hub", "session_upload", f"{dev['name']}:{session_id}",
-                                 r.get("status", "?"), {"bytes": len(body)})
-                return JSONResponse({"device": dev["name"], **r})
-            except (IngressRejected, ValueError) as e:
-                return JSONResponse({"error": str(e)}, status_code=422)
+            svc.sqlite.audit("hub", "session_upload", f"{dev['name']}:{session_id}", "queued",
+                             {"bytes": len(body)})
+        return JSONResponse({"device": dev["name"], "status": "queued"}, status_code=202)
 
     class BearerAuth(BaseHTTPMiddleware):
         async def dispatch(self, request, call_next):

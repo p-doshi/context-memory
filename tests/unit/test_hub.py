@@ -43,20 +43,24 @@ def test_requests_without_valid_token_are_rejected(client, svc):
     assert svc.sqlite.audit_tail(1)[0]["outcome"] == "denied"
 
 
-def test_session_upload_is_ingested_and_attributed(client, svc):
+def test_session_upload_is_queued_then_indexed_by_daemon(client, svc, settings):
+    from context_memory.server.daemon import process_remote_inbox
     token = hub.add_device(svc.sqlite, "Cluster login", "claude-work")
     auth = {"Authorization": f"Bearer {token}"}
     assert client.get("/v1/health", headers=auth).json()["device"] == "cluster-login"
     r = client.post("/v1/sessions", content=gzip.compress(_transcript()),
                     headers={**auth, "Content-Encoding": "gzip", "X-Session-Id": "s-123",
                              "X-Project-Dir": "-home-p-ocean"})
-    assert r.status_code == 200 and r.json()["status"] == "created"
+    assert r.status_code == 202 and r.json()["status"] == "queued"   # returns at once
+    assert svc.memory_search("hydrophone mooring depth")["results"] == []
+    home = settings.data_dir.parent
+    assert process_remote_inbox(svc, home, {}) == {"created": 1}
     hit = svc.memory_search("hydrophone mooring depth")["results"][0]
     assert "account:claude-work" in hit["tags"] and hit["project"] == "ocean"
-    # Re-upload of the same transcript is a no-op.
-    r2 = client.post("/v1/sessions", content=_transcript(),
-                     headers={**auth, "X-Session-Id": "s-123", "X-Project-Dir": "-home-p-ocean"})
-    assert r2.json()["status"] == "unchanged"
+    assert process_remote_inbox(svc, home, {}) == {}                 # unchanged file skipped
+    client.post("/v1/sessions", content=_transcript("a different question about tides"),
+                headers={**auth, "X-Session-Id": "s-123", "X-Project-Dir": "-home-p-ocean"})
+    assert process_remote_inbox(svc, home, {}) == {"updated": 1}     # same session, grown
 
 
 def test_revoked_device_and_bad_upload(client, svc):
