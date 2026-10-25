@@ -66,6 +66,12 @@ class Settings(BaseSettings):
     # SSH host aliases the daemon keeps a reverse tunnel to (see server/tunnels.py),
     # e.g. ["server5.example.org"]. JSON list in CMH_HUB_TUNNELS.
     hub_tunnels: list[str] = Field(default_factory=list)
+    # When an organisation's VPN runs inside WSL2 (vpn_route.py), the daemon keeps
+    # that distribution running so the VPN session survives idle periods.
+    wsl_vpn_distro: str | None = None
+    # SSH Host patterns routed through the WSL VPN by `cmh vpn-route wsl`.
+    vpn_route_patterns: list[str] = Field(default_factory=lambda: [
+        "bigdata*", "*.cs.dal.ca", "129.173.*", "cmh-tunnel-*"])
 
     # Public node (server/public_node.py): visitor site from the exported public
     # store, on loopback; cloudflared carries outside traffic to it.

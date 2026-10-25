@@ -77,6 +77,9 @@ def main(argv: list[str] | None = None) -> int:
                        "(add the old name under [aliases] so new data follows)")
     s.add_argument("old")
     s.add_argument("new")
+    s = sub.add_parser("vpn-route", help="send VPN-only SSH hosts through a VPN inside WSL2, or back")
+    s.add_argument("mode", choices=["wsl", "host", "status"])
+    s.add_argument("--distro", default="Ubuntu")
 
     sub.add_parser("stats", help="store statistics")
     sub.add_parser("status", help="daemon heartbeat and store statistics")
@@ -162,6 +165,17 @@ def main(argv: list[str] | None = None) -> int:
     from context_memory.config import get_settings
     settings = get_settings()
 
+    if args.cmd == "vpn-route":
+        from context_memory import vpn_route
+        cfg = Path.home() / ".ssh" / "config"
+        if args.mode == "status":
+            print(f"SSH route for {settings.vpn_route_patterns}: {vpn_route.current(cfg)}")
+            return 0
+        changed = vpn_route.set_route(cfg, settings.vpn_route_patterns, args.mode, args.distro)
+        print(f"{args.mode}: {len(changed)} host block(s): {', '.join(changed) or 'none'}")
+        if args.mode == "wsl":
+            print(f"keep the VM up for the daemon: setx CMH_WSL_VPN_DISTRO {args.distro}, then restart it")
+        return 0
     if args.cmd == "init":
         from context_memory.setup_init import init
         try:

@@ -59,9 +59,12 @@ class Child(threading.Thread):
 
 def plan(settings, secrets_get) -> list[tuple[str, list[str], dict[str, str]]]:
     """(name, argv, env) for each helper that is enabled and configured."""
-    if not settings.public_enabled:
-        return []
     out = []
+    if settings.wsl_vpn_distro:
+        # WSL stops an idle VM (and with it the VPN session); a sleeping process keeps it up.
+        out.append(("wsl-vm", ["wsl.exe", "-d", settings.wsl_vpn_distro, "--exec", "sleep", "infinity"], {}))
+    if not settings.public_enabled:
+        return out
     if settings.llm_server_exe and settings.llm_model_path and settings.public_llm_url:
         port = settings.public_llm_url.rstrip("/").rsplit(":", 1)[-1]
         out.append(("llm", [str(settings.llm_server_exe), "-m", str(settings.llm_model_path),
