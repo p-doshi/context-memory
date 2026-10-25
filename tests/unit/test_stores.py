@@ -135,3 +135,26 @@ def test_in_memory_cache_follows_new_versions_and_size_cap(tmp_path):
     assert {h["chunk_id"] for h in ls.search([1, 0, 0], 5)} == {"a", "b"}
     capped = LanceStore(tmp_path / "lance", dim=3, embedding_model="m", max_cache_rows=1)
     assert capped._snapshot() is None and len(capped.search([1, 0, 0], 5)) == 2
+
+
+def test_snapshot_is_verified_and_retained(svc, settings):
+    import time
+    from context_memory.server import backup
+    home = settings.data_dir.parent
+    (home / "config").mkdir(exist_ok=True)
+    (home / "config" / "sources.toml").write_text("# owner config")
+    (home / "config" / "devices").mkdir(exist_ok=True)
+    (home / "config" / "devices" / "x.token").write_text("secret")
+    svc.memory_write(text="alpha beta", kind="note", project="p")
+    snaps = []
+    for _ in range(3):
+        snaps.append(backup.make_snapshot(svc, home, keep=2))
+        time.sleep(1.1)  # snapshot names have one-second resolution
+    assert all(s["ok"] and s["chunks"] == s["vectors"] == 1 for s in snaps)
+    kept = sorted(p.name for p in (home / "backup").iterdir())
+    assert len(kept) == 2                                   # retention
+    latest = home / "backup" / kept[-1]
+    assert (latest / "config" / "sources.toml").exists()
+    assert not (latest / "config" / "devices").exists()     # tokens never backed up
+    assert backup.verify(latest, svc.embedder.dim, svc.embedder.model_name)["ok"]
+    assert backup.last_snapshot_age(home) < 60

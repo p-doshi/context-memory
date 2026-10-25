@@ -75,6 +75,9 @@ class Settings(BaseSettings):
     session_idle_seconds: int = 600
     # claude.ai / Perplexity syncs run at most this often per account.
     browser_sync_interval_seconds: int = 6 * 3600
+    # Verified local snapshots under <home>/backup (see server/backup.py).
+    backup_interval_seconds: int = 24 * 3600
+    backup_keep: int = 7
 
     @property
     def sqlite_path(self) -> Path:

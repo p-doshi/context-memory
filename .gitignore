@@ -16,3 +16,4 @@ data/
 
 # owner-specific config lives outside the repo; never commit a real one
 config/sources.toml
+backup/

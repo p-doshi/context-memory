@@ -104,6 +104,16 @@ def run_pass(svc, settings: Settings) -> dict:
     # pile up (456 fragments: ~100 ms per search, measured). Compact regularly.
     if svc.lance.small_fragments() >= 32:
         summary["lance_optimize"] = svc.lance.optimize()
+    # Daily verified snapshot, taken here because the daemon is the only writer.
+    from context_memory.server import backup
+    age = backup.last_snapshot_age(settings.data_dir.parent)
+    if age is None or age > settings.backup_interval_seconds:
+        try:
+            snap = backup.make_snapshot(svc, settings.data_dir.parent, keep=settings.backup_keep)
+            summary["backup"] = {k: snap[k] for k in ("chunks", "vectors", "bytes", "seconds")}
+        except Exception as e:
+            log.exception("backup failed")
+            summary["backup"] = {"failed": repr(e)[:200]}
     return summary
 
 
