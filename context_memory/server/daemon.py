@@ -137,8 +137,32 @@ def digests_due(svc, settings: Settings) -> dict:
         return {"digests": {"failed": repr(e)[:200]}}
 
 
+_publish_lock = threading.Lock()
+
+
 def site_publish_due(settings: Settings) -> dict:
     """Push the static site with the quick tunnel's address whenever it changes."""
+    with _publish_lock:  # the pass and the tunnel watcher never push at once
+        return _site_publish(settings)
+
+
+def watch_tunnel(settings: Settings, stop: threading.Event, every: float = 10) -> threading.Thread:
+    """Publish a new quick-tunnel address within seconds of it appearing, instead of
+    at the next daemon pass: until then the public site points at a dead address."""
+    def loop():
+        while not stop.wait(every):
+            try:
+                out = site_publish_due(settings)
+                if out:
+                    log.info("tunnel watcher: %s", json.dumps(out))
+            except Exception:
+                log.exception("tunnel watcher failed")
+    t = threading.Thread(target=loop, name="tunnel-watcher", daemon=True)
+    t.start()
+    return t
+
+
+def _site_publish(settings: Settings) -> dict:
     from context_memory import site_deploy
     from context_memory.server import children as children_mod
     home = settings.data_dir.parent
@@ -349,6 +373,8 @@ def main(settings: Settings | None = None, once: bool = False) -> int:
         from context_memory.server import children as children_mod
         child_stop = threading.Event()
         children = [] if once else children_mod.start(settings, child_stop, broker.get_secret)
+        if children and settings.public_enabled and settings.public_site_repo:
+            watch_tunnel(settings, child_stop)
         heartbeat = home / "run" / "heartbeat.json"
         while not stop["flag"]:
             t0 = time.time()
