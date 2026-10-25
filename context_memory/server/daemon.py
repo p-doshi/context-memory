@@ -131,12 +131,18 @@ def site_publish_due(settings: Settings) -> dict:
     if child is None or child.state != "up":
         return {}
     url = children_mod.tunnel_url(home, since=child.since)
+    if not url:
+        return {}
+    # Republish when the tunnel address or any site file changes.
+    import hashlib
+    digest = hashlib.sha256(b"".join(p.relative_to(site_deploy.SITE).as_posix().encode() + p.read_bytes()
+                                     for p in sorted(site_deploy.SITE.rglob("*")) if p.is_file())).hexdigest()[:16]
     marker = home / "public" / "published-api"
-    if not url or (marker.exists() and marker.read_text().strip() == url):
+    if marker.exists() and marker.read_text().strip() == f"{url} {digest}":
         return {}
     try:
         out = site_deploy.publish(home, url.removeprefix("https://"), settings.public_site_repo)
-        marker.write_text(url)
+        marker.write_text(f"{url} {digest}")
         return {"site_publish": {**out, "api": url}}
     except Exception as e:
         log.exception("site publish failed")
