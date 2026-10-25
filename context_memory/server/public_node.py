@@ -309,6 +309,7 @@ def build_app(settings: Settings, root: Path, hub_url: str, token: str,
                                                api_key=llm_key))
             finally:
                 llm_slot.release()
+            text = llm.ground(text, hits)  # drop unsupported sentences, cite the rest
             out = guard.check_answer(text, question, ip)
             text = text if out.ok else out.reply
             for i in range(0, len(text), 80):

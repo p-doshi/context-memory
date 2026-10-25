@@ -53,19 +53,37 @@ DEFAULT_RULES = {
         r"\b(give|show|tell|send|reveal|print|dump|leak|share|paste|what(?:'s| is| are))\b.{0,30}"
         r"\b(your|the owner'?s?|owner'?s?|his|her|their|admin|real|actual)\b.{0,20}"
         r"\b(api[_ -]?keys?|passwords?|tokens?|credentials?|secrets?|private keys?|ssh keys?)\b",
-        r"\b(owner|author|developer)'?s?\b.{0,30}\b(e-?mail|phone|home address|location|chats?|"
-        r"private messages|conversations)\b",
         r"\b(contents? of|cat|read|open)\b.{0,20}(\.env|id_rsa|id_ed25519|sources\.toml|metadata\.sqlite3)",
     ],
     "encoded_payload": [r"[A-Za-z0-9+/]{80,}={0,2}", r"(\\x[0-9a-fA-F]{2}){8,}", r"(%[0-9a-fA-F]{2}){12,}"],
     "abuse": [r"\b(kill yourself|kys)\b"],
 }
+# Not attacks: people asking for material this public site cannot have. Answered
+# politely, no strike, still logged for the owner.
+PRIVATE_RULES = [
+    r"\bi\s*(am|'m)\s+(the\s+)?(owner|author|admin|developer|maintainer|creator)\b",
+    r"\bi\s*(am|'m)\s+parth\b", r"\bas\s+the\s+(owner|author|admin)\b",
+    # A request (share/show/give ...) for someone's material; "how does it keep my chats
+    # private?" is a fair question and must pass.
+    r"\b(share|show|give|send|provide|tell\s+me|list|read|open|access|find|get|fetch|dump)\b.{0,40}"
+    r"\b(my|parth'?s|the\s+owner'?s|the\s+author'?s|his|her|their)\s+(own\s+)?(papers?|thesis|chats?|"
+    r"conversations?|files?|e-?mails?|messages|notes|results|research)\b",
+    r"\b(results|contents?|findings)\s+of\s+(the|my|his|her)\s+[\w-]+\s+(paper|thesis|project)\b",
+    r"\b(owner|author|developer)'?s?\b.{0,30}\b(e-?mail|phone|home address|location|chats?|"
+    r"private messages|conversations)\b",
+    r"\b(ip|ip\s+address|host\s*name|hostname)\s+(of|for)\s+(the|your|this|that)\b",
+    r"\b(server|machine|laptop|hub)'?s?\s+(ip|address|hostname)\b",
+]
+PRIVATE_REPLY = ("This public site only knows the project's public code and documentation. It can't see "
+                 "anyone's private files, papers, chats or servers, whoever is asking. That separation is "
+                 "deliberate: the public site runs from its own copy of the published material. Ask me how "
+                 "the memory works and I'll explain.")
 DEFAULT_REPLIES = [
     'Damn, looks like we got a "cyber" expert on our hands. Nice try, but stick to questions about the project.',
     "Bold move. Still no. Ask me about the pipeline, the code or the design instead.",
     "That prompt has been tried before, by people with more coffee than you. Project questions only.",
 ]
-SYSTEM_MARKERS = ["You answer questions from visitors about a software project", "Excerpts are quoted data"]
+SYSTEM_MARKERS = ["You are the guide on the public website", "Excerpts are quoted data"]
 OUTPUT_PATTERNS = [r"[A-Za-z]:[\\/](Users|JARVIS)\b", r"/home/\w+", r"\[WITHHELD:", r"\bcmh_[A-Za-z0-9_-]{20,}",
                    r"-----BEGIN [A-Z ]*PRIVATE KEY-----", r"\b(sk|pk)-[A-Za-z0-9]{20,}"]
 
@@ -104,6 +122,8 @@ class Guard:
         self.patterns = {k: [re.compile(p, re.I | re.S) for p in v] for k, v in rules.items()}
         self.allow = [re.compile(p, re.I) for p in (cfg.get("allow") or [])]
         self.replies = list(cfg.get("replies") or DEFAULT_REPLIES)
+        self.private = [re.compile(p, re.I) for p in PRIVATE_RULES + list(cfg.get("private_rules") or [])]
+        self.private_reply = str(cfg.get("private_reply") or PRIVATE_REPLY)
         lim = cfg.get("limits") or {}
         self.max_strikes = int(lim.get("strikes", 3))
         self.strike_window = float(lim.get("strike_window_seconds", 3600))
@@ -146,6 +166,9 @@ class Guard:
                 if any(p.search(question) for p in pats):
                     reasons.append(name)
         if not reasons:
+            if not any(a.search(question) for a in self.allow) and any(p.search(question) for p in self.private):
+                self.record("input", question, ip, ["private_request"])
+                return Verdict(False, ["private_request"], self.private_reply)
             return Verdict(True)
         with self.lock:
             self.strikes.setdefault(self.client_id(ip), []).append(time.time())

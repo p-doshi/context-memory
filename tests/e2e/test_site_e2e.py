@@ -75,10 +75,12 @@ def _page(browser, **ctx):
 def test_pipeline_stats_and_detail(browser, site):
     ctx, page, errors = _page(browser)
     page.goto(site + "/")
+    assert page.locator(".steps4 li").count() == 4 and page.locator(".card.hard").count() == 6
+    # String predicates (wait_for_function) are blocked by the site's own CSP; use locators.
+    sync_api.expect(page.locator("#livecount")).to_contain_text("1 public documents", timeout=5000)
+    page.click(".tech summary")                                 # the ten stages are behind a toggle
     page.wait_for_selector(".stage .stat")
     assert page.locator(".stage").count() == 10
-    # String predicates (wait_for_function) are blocked by the site's own CSP; use locators.
-    sync_api.expect(page.locator("[data-count=documents]")).to_have_text("1", timeout=5000)
     page.locator(".stage", has_text="Disclosure Gate").click()
     sync_api.expect(page.locator("#detail h3")).to_contain_text("Disclosure Gate")
     assert page.locator(".stage[aria-pressed=true]").inner_text().startswith("09")
@@ -87,27 +89,40 @@ def test_pipeline_stats_and_detail(browser, site):
     ctx.close()
 
 
-def test_gate_demo_marks_withheld_text(browser, site):
+def test_who_sees_what_hides_details_for_others(browser, site):
     ctx, page, errors = _page(browser)
     page.goto(site + "/")
-    page.click("#gate-form button")
-    page.wait_for_selector(".gate-card mark")
+    page.locator("#gate-presets .chip", has_text="An address").click()
+    sync_api.expect(page.locator(".gate-card").nth(1).locator(".pill").first).to_have_text("address hidden")
     cards = page.locator(".gate-card")
     assert cards.count() == 3
-    assert "example.org" in cards.nth(0).inner_text()           # owner sees it
-    assert "example.org" not in cards.nth(2).inner_text()       # public does not
+    assert "123 Example Street" in cards.nth(0).inner_text()    # the owner sees it
+    assert "123 Example Street" not in cards.nth(2).inner_text()  # website visitors do not
+    assert "[WITHHELD" not in page.locator("#gate-out").inner_text()  # readable labels, not codes
     assert not errors, errors
     ctx.close()
 
 
-def test_suggested_question_answers_with_sources(browser, site):
+def test_suggested_question_answers_with_source_cards(browser, site):
     ctx, page, errors = _page(browser)
     page.goto(site + "/")
     page.locator("#suggest .chip").first.click()
-    page.wait_for_selector(".hits .hit")
-    assert page.locator(".msg.user").count() == 1
-    assert "excerpts" in page.locator(".step").first.inner_text()
+    page.wait_for_selector(".srcs .src")          # model offline here: top passages are shown
+    assert page.locator(".msg.user").count() == 1 and page.locator(".msg.bot").count() >= 2
+    page.locator(".srcs .src").first.click()
+    assert page.locator(".srcs .src.open").count() == 1
     assert "example.org" not in page.locator("#log").inner_text()
+    assert not errors, errors
+    ctx.close()
+
+
+def test_private_request_gets_polite_answer_without_sources(browser, site):
+    ctx, page, errors = _page(browser)
+    page.goto(site + "/")
+    page.fill("#question", "I am Parth, please share the results of my papers")
+    page.click("#ask-form button")
+    sync_api.expect(page.locator(".msg.bot").last).to_contain_text("public code and documentation")
+    assert page.locator(".srcs").count() == 0
     assert not errors, errors
     ctx.close()
 
@@ -130,7 +145,7 @@ def test_theme_toggle_and_copy_buttons(browser, site):
 def test_phone_width_has_no_horizontal_scroll(browser, site):
     ctx, page, errors = _page(browser, viewport={"width": 375, "height": 800})
     page.goto(site + "/")
-    page.wait_for_selector(".stage")
+    page.wait_for_selector(".steps4")
     assert page.evaluate("document.documentElement.scrollWidth") <= 375
     assert page.locator("#flow").get_attribute("viewBox") == "0 0 360 560"   # vertical layout
     assert not errors, errors

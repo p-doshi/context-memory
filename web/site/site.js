@@ -44,7 +44,7 @@ const sections = document.querySelectorAll(".reveal");
 if ("IntersectionObserver" in window) {
   const io = new IntersectionObserver((entries) => {
     for (const e of entries) if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); }
-  }, { rootMargin: "0px 0px -60px 0px", threshold: 0.08 });
+  }, { rootMargin: "0px 0px -60px 0px", threshold: 0.05 });
   sections.forEach((s) => io.observe(s));
 } else sections.forEach((s) => s.classList.add("in"));
 
@@ -57,8 +57,8 @@ function svg(tag, attrs = {}, ...kids) {
   return e;
 }
 const SOURCES = [["Claude Code", "every machine"], ["claude.ai", "web + desktop"], ["Perplexity", "threads"],
-                 ["Code", "git repositories"], ["Docs", "Markdown"]];
-const OUTS = [["Claude Code", "any machine, via SSH"], ["Owner console", "private"], ["This site", "public copy"]];
+                 ["Code", "git repositories"], ["Notes", "Markdown docs"]];
+const OUTS = [["Your assistants", "any machine, via SSH"], ["Owner console", "private"], ["This site", "public copy"]];
 
 function node(x, y, w, h, title, sub, cls = "node") {
   const g = svg("g", { class: cls, transform: `translate(${x},${y})` });
@@ -88,7 +88,7 @@ function drawFlow() {
       const row = i < 3 ? 0 : 1, col = i < 3 ? i : i - 3 + 0.5, x = 6 + col * 118, y = 10 + row * 60;
       nodes.append(node(x, y, 112, 44, t, "")); ins.push([x + 56, y + 44]);
     });
-    OUTS.forEach(([t], i) => { const x = 6 + i * 118, y = 490; nodes.append(node(x, y, 112, 44, t, "")); outs.push([x + 56, y]); });
+    OUTS.forEach(([t], i) => { const x = 6 + i * 118, y = 490; nodes.append(node(x, y, 112, 44, t.replace("Your ", ""), "")); outs.push([x + 56, y]); });
   }
   const cx = core.x + core.w / 2, cy = core.y + core.h / 2;
   const cin = wide ? [core.x, cy] : [cx, core.y], cout = wide ? [core.x + core.w, cy] : [cx, core.y + core.h];
@@ -112,7 +112,7 @@ function drawFlow() {
       dots.append(c);
     }
   });
-  const g = node(core.x, core.y, core.w, core.h, "one local store", "SQLite · LanceDB · graph", "node core");
+  const g = node(core.x, core.y, core.w, core.h, "one private memory", "on your laptop", "node core");
   g.insertBefore(svg("rect", { class: "pulse", width: core.w, height: core.h, rx: 12 }), g.firstChild);
   nodes.append(g);
 }
@@ -125,26 +125,14 @@ maybeRedraw();
 let rt;
 addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(maybeRedraw, 150); });
 
-// ---- live stats -------------------------------------------------------------------
-function countUp(target, value) {
-  if (REDUCED) { target.textContent = fmt(value); return; }
-  const t0 = performance.now(), dur = 900;
-  const tick = (t) => {
-    const k = Math.min(1, (t - t0) / dur), eased = 1 - Math.pow(1 - k, 3);
-    target.textContent = fmt(Math.round(value * eased));
-    if (k < 1) requestAnimationFrame(tick);
-  };
-  requestAnimationFrame(tick);
-}
-
-// ---- pipeline ---------------------------------------------------------------------
+// ---- technical details: the ten stages --------------------------------------------
 let PIPE = null, STATS = null, current = 0;
 function statFor(stage) {
   if (!STATS || !stage.stat) return null;
   if (stage.stat === "documents") return fmt(Object.values(STATS.documents).reduce((a, b) => a + b, 0)) + " documents";
-  if (stage.stat === "chunks") return fmt(STATS.chunks) + " chunks";
+  if (stage.stat === "chunks") return fmt(STATS.chunks) + " passages";
   if (stage.stat === "vectors") return fmt(STATS.vectors) + " vectors";
-  if (stage.stat === "graph") return fmt(Object.values(STATS.graph).reduce((a, b) => a + b, 0)) + " edges";
+  if (stage.stat === "graph") return fmt(Object.values(STATS.graph).reduce((a, b) => a + b, 0)) + " links";
   return null;
 }
 function renderPipeline() {
@@ -177,7 +165,6 @@ function detailContent(i) {
     a.rel = "noopener";
     kids.push(el("p", "cite small", s.citation.text + ". ", a));
   }
-  if (s.demo) { const a = el("a", "", "Try it below ↓"); a.href = "#gate-h"; kids.push(el("p", "small", a)); }
   return kids;
 }
 function select(i, instant = false) {
@@ -190,74 +177,133 @@ function select(i, instant = false) {
 }
 async function loadPipeline() {
   PIPE = await getJSON("/pipeline.json");
-  $("#repo").href = PIPE.repository;
+  const repo = $("#repo");
+  if (repo) repo.href = PIPE.repository;
   renderPipeline();
   select(0, true);
   try {
     STATS = await getJSON("/api/stats");
     renderPipeline();
-    const edges = Object.values(STATS.graph).reduce((a, b) => a + b, 0);
     const docs = Object.values(STATS.documents).reduce((a, b) => a + b, 0);
-    for (const [k, v] of Object.entries({ documents: docs, chunks: STATS.chunks, vectors: STATS.vectors, edges })) {
-      const t = document.querySelector(`[data-count="${k}"]`);
-      if (t) countUp(t, v);
-    }
+    const lc = $("#livecount");
+    if (lc) lc.textContent = `live: ${fmt(docs)} public documents · ${fmt(STATS.chunks)} passages`;
     if (STATS.answer_model !== "local")
-      $("#ask-note").textContent = "The answer model is offline, so answers list the matching excerpts and their sources.";
+      $("#ask-note").textContent = "The answer model is offline right now, so answers list the most relevant passages.";
   } catch {
-    $("#ask-note").textContent = "The live memory is offline right now; the pipeline and the guide still work.";
-    document.querySelectorAll("[data-count]").forEach((t) => { t.textContent = "offline"; });
+    $("#ask-note").textContent = "The live memory is offline right now; everything else on this page still works.";
   }
 }
 
-// ---- disclosure gate demo ----------------------------------------------------------
-const RECIPIENTS = { owner: "Owner", cloud_model: "Cloud model", public: "Public" };
-function withMarks(text) {
-  const p = el("p", "mono");
+// ---- privacy scenario ------------------------------------------------------------------
+const READERS = [
+  ["owner", "You", "You, on your laptop", "Sees everything. It's your memory."],
+  ["cloud_model", "AI", "A cloud AI, e.g. Claude Code", "Gets the knowledge, not your personal details."],
+  ["public", "WEB", "Visitors to this website", "Same filter, and only documents chosen for publication."],
+];
+const HIDDEN = { email: "email hidden", phone: "phone number hidden", street_address: "address hidden",
+                 postal_code_ca: "postal code hidden", payment_card: "card number hidden" };
+function noteWithPills(text) {
+  const p = el("p", "note");
   let last = 0;
-  for (const m of text.matchAll(/\[WITHHELD:[^\]]+\]/g)) {
-    p.append(text.slice(last, m.index), el("mark", "", m[0]));
+  for (const m of text.matchAll(/\[WITHHELD:([^\]:]+):([^\]]+)\]/g)) {
+    p.append(text.slice(last, m.index), el("span", "pill", HIDDEN[m[2]] || m[2].replace(/_/g, " ") + " hidden"));
     last = m.index + m[0].length;
   }
   p.append(text.slice(last));
   return p;
 }
-$("#gate-form")?.addEventListener("submit", async (e) => {
-  e.preventDefault();
+async function runGate() {
   const out = $("#gate-out");
   try {
     const res = await getJSON("/api/gate", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text: $("#gate-text").value }) });
-    out.replaceChildren(...Object.entries(RECIPIENTS).map(([k, label], i) => {
-      const card = el("div", "gate-card", el("p", "label", label), withMarks(res[k].text),
-        el("p", "small muted", res[k].withheld.length ? "withheld: " + res[k].withheld.join(", ") : "nothing withheld"));
+    out.replaceChildren(...READERS.map(([key, av, who, sub], i) => {
+      const card = el("div", "gate-card",
+        el("div", "who", el("span", "av", av), el("div", "", el("b", "", who), el("span", "", sub))),
+        noteWithPills(res[key].text));
       card.style.setProperty("--i", i);
       return card;
     }));
   } catch {
-    out.replaceChildren(el("p", "muted", "The gate demo needs the live memory, which is offline right now."));
+    out.replaceChildren(el("p", "muted", "This demo needs the live memory, which is offline right now."));
   }
-});
+}
+$("#gate-form")?.addEventListener("submit", (e) => { e.preventDefault(); runGate(); });
+document.querySelectorAll("#gate-presets .chip").forEach((c) => c.addEventListener("click", () => {
+  $("#gate-text").value = c.dataset.text;
+  runGate();
+}));
+if ($("#gate-form")) {
+  // Show the first example once the section comes into view, without a click.
+  const g = $("#gate-form").closest("section");
+  if ("IntersectionObserver" in window) {
+    const once = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) { once.disconnect(); runGate(); } });
+    once.observe(g);
+  } else runGate();
+}
 
-// ---- ask (AG-UI client) --------------------------------------------------------------
+// ---- ask (AG-UI client) ---------------------------------------------------------------
 const threadId = crypto.randomUUID();
 const history = [];
-function reveal(target, text) {
-  // Quick progressive reveal (≤ 0.7 s); instant under reduced motion.
-  if (REDUCED || text.length < 40) { target.textContent = text; return; }
-  const step = Math.max(1, Math.ceil(text.length / 42));
-  let n = 0;
-  const tick = () => { n = Math.min(text.length, n + step); target.textContent = text.slice(0, n); if (n < text.length) requestAnimationFrame(tick); };
-  requestAnimationFrame(tick);
+const IDK = "I don't know that from the project's public documents.";
+
+function cleanText(s) {
+  // Markdown tables, emphasis, code ticks and headings read badly as excerpts.
+  return s.replace(/\|?\s*-{3,}\s*(\|\s*-{3,}\s*)+\|?/g, " ")
+          .replace(/\s*\|\s*/g, " · ").replace(/[*`#>]+/g, "").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+          .replace(/\s+/g, " ").replace(/^ ?· /, "").trim();
 }
+function describe(h) {
+  // "path/to/file.py › L12-L80 · def run" -> file.py / "def run · lines 12–80"
+  const parts = (h.where || h.title || "").split(" › ");
+  if (h.kind === "code") {
+    const file = (parts[0] || h.title || "").split("/").pop();
+    const m = /L(\d+)-L(\d+)(?: · (.*))?/.exec(parts.slice(1).join(" › "));
+    return [file, m ? `${(m[3] || "code").split(",")[0]} · lines ${m[1]}–${m[2]}` : "code"];
+  }
+  // Section headings are often numbered ("5. Disclosure policy engine"); the card adds its own number.
+  const title = (parts[parts.length - 1] || h.title || "").replace(/^\d+(\.\d+)*\.?\s+/, "");
+  return [title, parts.length > 1 ? parts[0] : "documentation"];
+}
+function sourceCard(h, n) {
+  const [t, s] = describe(h);
+  const raw = h.snippet || "";
+  const x = h.kind === "code" ? el("code", "x", raw.slice(0, 400)) : el("div", "x", cleanText(raw).slice(0, 420));
+  const b = el("button", "src", el("div", "t", `${n}. ${t}`),
+               el("div", "s", s + " · ", el("span", "badge " + h.status, h.status)), x);
+  b.type = "button";
+  b.dataset.n = n;
+  b.addEventListener("click", () => b.classList.toggle("open"));
+  return b;
+}
+function answerWithCitations(text, onCite) {
+  const d = el("div", "msg bot");
+  let last = 0;
+  for (const m of text.matchAll(/\[(\d+)\]/g)) {
+    d.append(text.slice(last, m.index));
+    const c = el("button", "cn", m[1]);
+    c.type = "button";
+    c.setAttribute("aria-label", "Show source " + m[1]);
+    c.addEventListener("click", () => onCite(Number(m[1])));
+    d.append(c);
+    last = m.index + m[0].length;
+  }
+  d.append(text.slice(last));
+  return d;
+}
+function scrollLog() { const l = $("#log"); l.scrollTop = l.scrollHeight; }
+
 async function ask(question) {
   history.push({ id: crypto.randomUUID(), role: "user", content: question });
-  $("#log").append(el("div", "msg user", question));
-  const step = el("div", "step busy", "Searching the memory and writing an answer…");
-  $("#log").append(step);
+  const log = $("#log");
+  log.append(el("div", "msg user", question));
+  const typing = el("div", "typing", el("i"), el("i"), el("i"));
+  typing.setAttribute("aria-label", "Writing an answer");
+  log.append(typing);
+  scrollLog();
   const btn = $("#ask-form button");
   btn.disabled = true;
-  let answer = null, text = "", hits = [];
+  let text = "", hits = [];
   try {
     await apiReady;
     // AG-UI events as one JSON array (Cloudflare quick tunnels do not carry server-sent events).
@@ -266,32 +312,40 @@ async function ask(question) {
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({ threadId, runId: crypto.randomUUID(), messages: history, tools: [], context: [], state: {} }),
     });
-    step.classList.remove("busy");
-    if (r.status === 429) { step.textContent = "Too many questions right now; please wait a minute."; return; }
-    if (!r.ok) { step.textContent = "The project memory is offline right now (" + r.status + ")."; return; }
+    typing.remove();
+    if (r.status === 429) { log.append(el("div", "msg bot", "Lots of questions right now. Please try again in a minute.")); return; }
+    if (!r.ok) { log.append(el("div", "msg bot", "The project memory is offline right now. The rest of the page still works.")); return; }
     const { events } = await r.json();
     for (const ev of events) {
       if (ev.type === "TOOL_CALL_RESULT") hits = JSON.parse(ev.content).hits || [];
-      else if (ev.type === "TEXT_MESSAGE_START") { answer = el("div", "msg", ""); step.after(answer); }
       else if (ev.type === "TEXT_MESSAGE_CONTENT") text += ev.delta;
-      else if (ev.type === "RUN_ERROR") step.textContent = "Error: " + ev.message;
     }
-    if (answer) { reveal(answer, text); history.push({ id: crypto.randomUUID(), role: "assistant", content: text }); }
-    step.textContent = hits.length ? "Answered from " + hits.length + " excerpts, listed below the answer." : "";
-    if (hits.length) {
-      const box = el("ol", "hits");
-      hits.forEach((h, i) => {
-        const li = el("li", "hit", el("div", "where", h.where || h.title || h.project),
-          el("div", "meta", h.kind + " · ", el("span", "badge " + h.status, h.status)),
-          el("div", "", h.snippet.slice(0, 260) + (h.snippet.length > 260 ? "…" : "")));
-        li.style.setProperty("--i", i);
-        box.append(li);
-      });
-      (answer || step).after(box);
+    text = text.trim() || IDK;
+    history.push({ id: crypto.randomUUID(), role: "assistant", content: text });
+    // Show only the sources the answer cites; with the model offline (extractive
+    // answers, no citations) show the top three.
+    const cited = [...new Set([...text.matchAll(/\[(\d+)\]/g)].map((m) => Number(m[1])))]
+      .filter((n) => n >= 1 && n <= hits.length);
+    const extractive = STATS && STATS.answer_model !== "local";
+    const shown = text.startsWith(IDK) ? [] : (cited.length ? cited : (extractive ? [1, 2, 3].filter((n) => n <= hits.length) : []));
+    let srcs = null;
+    const onCite = (n) => {
+      const card = srcs?.querySelector(`.src[data-n="${n}"]`);
+      if (!card) return;
+      srcs.querySelectorAll(".src").forEach((c) => c.classList.toggle("hl", c === card));
+      card.classList.add("open");
+      card.scrollIntoView({ block: "nearest", behavior: REDUCED ? "auto" : "smooth" });
+    };
+    log.append(answerWithCitations(text, onCite));
+    if (shown.length) {
+      srcs = el("div", "srcs", el("div", "srcs-h", shown.length === 1 ? "Source" : "Sources"),
+                ...shown.map((n) => sourceCard(hits[n - 1], n)));
+      log.append(srcs);
     }
+    scrollLog();
   } catch (e) {
-    step.classList.remove("busy");
-    step.textContent = "Something went wrong: " + e.message;
+    typing.remove();
+    log.append(el("div", "msg bot", "Something went wrong: " + e.message));
   } finally {
     btn.disabled = false;
   }
@@ -318,4 +372,4 @@ document.querySelectorAll("pre").forEach((pre) => {
   pre.append(b);
 });
 
-if ($("#pipeline")) loadPipeline().catch(() => { $("#pipeline").replaceChildren(el("li", "muted", "Could not load the pipeline description.")); });
+if ($("#pipeline")) loadPipeline().catch(() => { $("#pipeline").replaceChildren(el("li", "muted", "Could not load the technical details.")); });

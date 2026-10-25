@@ -6,6 +6,26 @@ Repository: https://github.com/p-doshi/context-memory
 Replication guide (six commands, no code): [/guide.md](/guide.md)
 Machine-readable pipeline: [/pipeline.json](/pipeline.json)
 
+## Problem
+
+AI assistants forget everything between sessions; a person's context is scattered across machines, accounts and tools; pasting background into prompts costs tokens and exposes sensitive details.
+
+## How it works
+
+1. Capture: sessions from every machine arrive over SSH; chats, code and notes are read where they live.
+2. Understand: content is split into passages, embedded on the local GPU, and linked into a knowledge graph.
+3. Remember: one store on the laptop; changed files retire old passages instead of deleting them.
+4. Answer: an assistant gets the relevant passages, their sources, and whether each source file still says so.
+
+## Design: the hard parts
+
+- Privacy: no cloud database or hosted AI model; a deterministic filter replaces contact details, precise locations, card numbers and credentials before anything reaches a cloud assistant.
+- Security: SSH only, one revocable token per device; the private memory never faces the internet and a firewall rule blocks its software from outside connections; this site serves a separate public-only copy.
+- Speed: in-memory vectors and pre-filtered keyword search; median warm search 152 ms on the laptop, 219 ms from a remote server through the SSH tunnel.
+- Trust: every passage carries its source; file passages are re-checked at answer time (verified, stale, missing).
+- Accuracy: keyword and meaning-based rankings merged; top-5 hit rate 0.90 vs 0.75 for meaning alone on 30 test questions (wide confidence intervals).
+- Cost: embedding and this site's answer model run on one 6 GB GPU (GTX 1660 Ti); no paid APIs.
+
 ## Pipeline
 
 1. **sources**: Claude Code sessions from every machine (session hook, SSH only), claude.ai and Perplexity conversations (logged-in local browser), git-tracked code, Markdown docs.
