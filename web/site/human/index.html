@@ -11,56 +11,86 @@
 <link rel="stylesheet" href="/site.css">
 </head>
 <body>
-<header class="wrap">
+<a class="skip" href="#pipe-h">Skip to the pipeline</a>
+<header class="wrap top">
+  <span class="brand">context&#8209;memory</span>
+  <nav class="links" aria-label="Site">
+    <a href="#pipe-h">Pipeline</a><a href="#ask">Ask</a><a href="/guide">Replicate</a>
+    <button class="theme" id="theme" type="button" aria-label="Colour theme: system">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="5"/><path d="M12 1v3M12 20v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M1 12h3M20 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>
+    </button>
+  </nav>
+</header>
+
+<section class="wrap hero" aria-labelledby="title">
   <p class="eyebrow">Open-source research software · MIT</p>
-  <h1>Context Memory Harness</h1>
-  <p class="lede" id="summary">A local memory shared by AI assistants.</p>
+  <h1 id="title">One memory for every<br>AI assistant you use.</h1>
+  <p class="lede" id="summary">Every coding session, chat, codebase and note goes into one store on your own laptop.
+    Assistants on any machine search it, with the source of every answer attached.</p>
   <nav class="cta">
-    <a class="btn primary" href="/guide">Replicate it</a>
+    <a class="btn primary" href="/guide">Replicate it <span aria-hidden="true">→</span></a>
     <a class="btn" href="#ask">Ask the project</a>
     <a class="btn ghost" id="repo" href="#">Source code</a>
   </nav>
-  <pre class="quickstart" aria-label="Quick start"><span class="c"># after installing uv; full steps in the guide</span>
+  <figure class="flow" aria-label="Data flows from every source into one local store and out to assistants">
+    <svg id="flow" role="img"><title>Sources flow into one local memory, which serves assistants, the owner's console and this site</title></svg>
+  </figure>
+  <dl class="stats" id="stats" aria-live="polite">
+    <div><dt>documents</dt><dd data-count="documents">–</dd></div>
+    <div><dt>chunks</dt><dd data-count="chunks">–</dd></div>
+    <div><dt>vectors</dt><dd data-count="vectors">–</dd></div>
+    <div><dt>graph edges</dt><dd data-count="edges">–</dd></div>
+  </dl>
+  <div class="quick">
+    <pre class="quickstart" id="quickstart"><code><span class="c"># after installing uv; every step is in the guide</span>
 git clone https://github.com/p-doshi/context-memory &amp;&amp; cd context-memory
 uv sync --locked --extra embed
 uv run cmh init --code ~/my-repo --download-model
-uv run cmh daemon --once &amp;&amp; uv run cmh search "how did I set up training"</pre>
-</header>
+uv run cmh daemon --once &amp;&amp; uv run cmh search "how did I set up training"</code></pre>
+  </div>
+</section>
 
 <main class="wrap">
-  <section aria-labelledby="pipe-h">
+  <section class="reveal" aria-labelledby="pipe-h">
     <h2 id="pipe-h">The pipeline</h2>
-    <p class="muted">Everything runs on one laptop. Select a stage to see what it does and where it lives in the code.
-      Live counts come from the public part of the memory.</p>
+    <p class="muted">Ten stages, all on one laptop. Select one to see what it does and where it lives in the code.</p>
     <ol class="pipeline" id="pipeline"></ol>
     <article class="detail" id="detail" aria-live="polite"></article>
   </section>
 
-  <section aria-labelledby="gate-h">
+  <section class="reveal" aria-labelledby="gate-h">
     <h2 id="gate-h">Try the Disclosure Gate</h2>
-    <p class="muted">Type a sentence with, say, an e-mail address or a street address. Nothing you type is stored.</p>
+    <p class="muted">Before anything leaves the memory, a deterministic gate decides what each kind of recipient may see.
+      Type a sentence with an e-mail or street address. Nothing you type is stored.</p>
     <form id="gate-form" class="row">
+      <label class="sr" for="gate-text">Text to run through the gate</label>
       <input id="gate-text" maxlength="600" autocomplete="off"
-             value="Send the results to jane.doe@example.org before Friday.">
+             value="Send the results to jane.doe@example.org at 123 Example Street before Friday.">
       <button class="btn primary" type="submit">Run the gate</button>
     </form>
     <div class="gate-out" id="gate-out"></div>
   </section>
 
-  <section aria-labelledby="ask-h" id="ask">
+  <section class="reveal" aria-labelledby="ask-h" id="ask">
     <h2 id="ask-h">Ask the project</h2>
     <p class="muted" id="ask-note">Answers are written from excerpts of the project's public memory, with the sources shown.</p>
+    <div class="suggest" id="suggest">
+      <button type="button" class="chip">How is private data kept out of answers?</button>
+      <button type="button" class="chip">Which embedding model is used, and why float32?</button>
+      <button type="button" class="chip">How do other machines reach the memory?</button>
+    </div>
     <div id="log" class="log"></div>
     <form id="ask-form" class="row">
+      <label class="sr" for="question">Your question</label>
       <input id="question" maxlength="500" autocomplete="off"
-             placeholder="e.g. How does the memory keep private data out of answers?">
+             placeholder="Ask about the code, the design or the decisions">
       <button class="btn primary" type="submit">Ask</button>
     </form>
   </section>
 </main>
 
-<footer class="wrap muted small">
-  <p>Agents and scripts: this page is available as <a href="/overview.md">Markdown</a>, the stages as
+<footer class="wrap foot muted small">
+  <p>Agents and scripts: this page is also available as <a href="/overview.md">Markdown</a>, the stages as
     <a href="/pipeline.json">JSON</a>, and an index at <a href="/llms.txt">/llms.txt</a>.
     Only material the owner made public is searched; personal details are withheld automatically.</p>
 </footer>
