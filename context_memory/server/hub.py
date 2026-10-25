@@ -154,6 +154,8 @@ def build_app(settings: Settings, embedder: Embedder, service: MemoryService | N
 
     mcp = build_mcp(lambda: svc, allow_local_ingest=False, actor="hub", lock=lock,
                     authorize=authorize)
+    # Load the in-memory vector copy now, not on the first remote search.
+    svc.lance._snapshot()
 
     # -- owner console: static files (no data, no token) + admin-scope data API --
     from starlette.responses import FileResponse, Response
@@ -280,6 +282,8 @@ def build_app(settings: Settings, embedder: Embedder, service: MemoryService | N
     class BearerAuth(BaseHTTPMiddleware):
         async def dispatch(self, request, call_next):
             path = request.url.path
+            if path == "/favicon.ico":
+                return Response(status_code=404)  # browsers ask for it; not worth an audit row
             if path == "/console" or path.startswith("/console/"):
                 return await call_next(request)  # static page from an allowlist; holds no data
             header = request.headers.get("authorization", "")

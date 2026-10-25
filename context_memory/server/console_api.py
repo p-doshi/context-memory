@@ -84,7 +84,7 @@ def entity_graph(svc, name: str, depth: int = 1, limit: int = 150) -> dict:
     for e in res["edges"]:
         for side in ("src", "dst"):
             nid = f"{e[side + '_type']}:{e[side + '_name']}"
-            nodes.setdefault(nid, {"id": nid, "label": e[side + "_name"].rsplit("/", 1)[-1][:60],
+            nodes.setdefault(nid, {"id": nid, "label": e[side + "_name"],
                                    "full": e[side + "_name"], "kind": e[side + "_type"]})
         edges.append({"source": f"{e['src_type']}:{e['src_name']}",
                       "target": f"{e['dst_type']}:{e['dst_name']}", "relation": e["relation"]})

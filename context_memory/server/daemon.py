@@ -266,6 +266,9 @@ def main(settings: Settings | None = None, once: bool = False) -> int:
                  settings.data_dir)
         svc = build_service(settings)
         log.info("embedder %s dim=%d", svc.embedder.model_name, svc.embedder.dim)
+        # Warm the model (kernels, GPU clocks) so the first real search is not
+        # ~2 s slower than the rest (seen after restarts).
+        svc.embedder.embed_query("warm up")
         log.info("reconcile: %s", svc.reconcile())
         tunnels = []
         if settings.hub_enabled:

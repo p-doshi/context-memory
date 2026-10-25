@@ -109,10 +109,21 @@ const KIND = {
   document: ["#F0E442", "ellipse"], module: ["#0072B2", "rectangle"], class: ["#CC79A7", "triangle"],
   function: ["#D55E00", "ellipse"], method: ["#D55E00", "vee"], file_ref: ["#999999", "tag"],
 };
+// Short labels: code symbols keep their last dotted parts, paths their file name.
+function shortLabel(n) {
+  const full = n.full || n.label || "";
+  if (["module"].includes(n.kind)) return full.split(".").pop();
+  if (["function", "class", "method"].includes(n.kind)) return full.split(".").slice(-2).join(".");
+  if (["document", "file_ref"].includes(n.kind)) return full.split(/[\\/]/).pop();
+  return full;
+}
+
 let cy = null;
 function drawGraph(data, center) {
-  const nodes = data.nodes.map((n) => ({ data: { ...n, weight: n.weight || 1 } }));
+  const nodes = data.nodes.map((n) => ({ data: { ...n, full: n.full || n.label, label: shortLabel(n),
+                                                  weight: n.weight || 1 } }));
   const edges = data.edges.map((e, i) => ({ data: { id: "e" + i, ...e } }));
+  const showEdgeLabels = edges.length <= 30;
   if (cy) cy.destroy();
   cy = cytoscape({
     container: $("#cy"), elements: [...nodes, ...edges], wheelSensitivity: 0.3,
@@ -120,20 +131,37 @@ function drawGraph(data, center) {
       { selector: "node", style: {
           "background-color": (n) => (KIND[n.data("kind")] || ["#bbbbbb"])[0],
           shape: (n) => (KIND[n.data("kind")] || [null, "ellipse"])[1],
-          label: "data(label)", color: "#d8dde4", "font-size": 9, "text-valign": "bottom", "text-margin-y": 3,
-          width: (n) => 10 + 4 * Math.sqrt(n.data("weight")), height: (n) => 10 + 4 * Math.sqrt(n.data("weight")) } },
-      { selector: "edge", style: { width: (e) => Math.min(1 + Math.log2(1 + (e.data("weight") || 1)), 6),
+          label: "data(label)", color: "#d8dde4", "font-size": 10, "text-valign": "bottom", "text-margin-y": 3,
+          "text-wrap": "ellipsis", "text-max-width": "140px", "min-zoomed-font-size": 7,
+          "text-background-color": "#191d23", "text-background-opacity": 0.75, "text-background-padding": 1,
+          width: (n) => Math.min(12 + 3 * Math.sqrt(n.data("weight")), 48),
+          height: (n) => Math.min(12 + 3 * Math.sqrt(n.data("weight")), 48) } },
+      { selector: "edge", style: { width: (e) => Math.min(1 + Math.log2(1 + (e.data("weight") || 1)), 5),
           "line-color": "#3b4452", "curve-style": "bezier", "target-arrow-shape": "triangle",
-          "target-arrow-color": "#3b4452", "arrow-scale": 0.6, label: "data(relation)", "font-size": 7,
-          color: "#8b95a3" } },
+          "target-arrow-color": "#3b4452", "arrow-scale": 0.6,
+          label: showEdgeLabels ? "data(relation)" : "", "font-size": 8, color: "#8b95a3" } },
       { selector: "node[id = '" + (center || "") + "']", style: { "border-width": 3, "border-color": "#ffffff" } },
     ],
-    layout: { name: "cose", animate: false, nodeRepulsion: 9000, idealEdgeLength: 70 },
+    // Neighbourhood: centre in the middle, neighbours in rings. Projection: force layout.
+    // Neighbourhood rings: centre, then what it defines, then everything else.
+    layout: center
+      ? { name: "concentric", animate: false, minNodeSpacing: 34, levelWidth: () => 1,
+          concentric: (n) => {
+            if (n.id() === center) return 3;
+            const defined = n.connectedEdges().some((e) => e.data("relation") === "defines" && e.data("source") === center);
+            return defined ? 2 : 1;
+          } }
+      : { name: "cose", animate: false, nodeRepulsion: 400000, idealEdgeLength: 150, nodeOverlap: 40,
+          componentSpacing: 120, numIter: 2500, randomize: false },
   });
   cy.on("tap", "node", (evt) => {
     const n = evt.target.data();
-    $("#g-entity").value = n.kind === "project" ? n.label : (n.full || n.label);
+    $("#g-entity").value = n.full;
     loadEntityGraph();
+  });
+  cy.on("mouseover", "node", (evt) => {
+    const n = evt.target.data();
+    $("#g-info").textContent = n.kind + ": " + n.full;
   });
   $("#g-info").textContent = data.nodes.length + " nodes, " + data.edges.length + " edges";
   $("#legend").replaceChildren(...[...new Set(data.nodes.map((n) => n.kind))].map((k) =>
