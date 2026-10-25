@@ -228,6 +228,85 @@ def build_app(settings: Settings, embedder: Embedder, service: MemoryService | N
         with lock:
             return _json(console_api.audit(svc, n))
 
+    # -- public surface (visitor site): `public` scope, opt-in projects only ------
+    from starlette.responses import StreamingResponse
+
+    from context_memory import public as public_mod
+
+    visitor_dir = Path(__file__).resolve().parents[2] / "web" / "visitor"
+    visitor_files = {"index.html": "text/html", "visitor.js": "text/javascript",
+                     "visitor.css": "text/css", "vendor/cytoscape.min.js": "text/javascript"}
+    rate: dict[str, list[float]] = {}  # device -> request times in the last minute
+
+    def over_limit(dev_name: str, per_minute: int = 60) -> bool:
+        now = time.time()
+        times = [t for t in rate.get(dev_name, []) if now - t < 60]
+        times.append(now)
+        rate[dev_name] = times
+        return len(times) > per_minute
+
+    def _public_sources():
+        return load_sources(settings.resolved_sources_file)
+
+    def _limited():
+        return JSONResponse({"error": "rate limit: 60 requests per minute"}, status_code=429,
+                            headers={"Retry-After": "60"})
+
+    @mcp.custom_route("/visitor", methods=["GET"])
+    async def visitor_index(request: Request):
+        return FileResponse(visitor_dir / "index.html", media_type="text/html", headers=security_headers)
+
+    @mcp.custom_route("/visitor/{path:path}", methods=["GET"])
+    async def visitor_static(request: Request):
+        name = request.path_params.get("path") or "index.html"
+        src = console_dir if name == "vendor/cytoscape.min.js" else visitor_dir
+        if name not in visitor_files or not (src / name).is_file():
+            return Response("not found", status_code=404)
+        return FileResponse(src / name, media_type=visitor_files[name], headers=security_headers)
+
+    @mcp.custom_route("/v1/public/search", methods=["GET"])
+    async def public_search(request: Request):
+        if over_limit(current_device.get()["name"]):
+            return _limited()
+        q = request.query_params.get("q", "")[:300]
+        with lock:
+            return _json(public_mod.search(svc, _public_sources(), q))
+
+    @mcp.custom_route("/v1/public/projects", methods=["GET"])
+    async def public_projects(request: Request):
+        if over_limit(current_device.get()["name"]):
+            return _limited()
+        with lock:
+            return _json(public_mod.projects(svc, _public_sources()))
+
+    @mcp.custom_route("/v1/public/graph", methods=["GET"])
+    async def public_graph(request: Request):
+        if over_limit(current_device.get()["name"]):
+            return _limited()
+        with lock:
+            return _json(public_mod.architecture_graph(svc, _public_sources()))
+
+    @mcp.custom_route("/v1/public/agent", methods=["POST"])
+    async def public_agent(request: Request):
+        """AG-UI run over server-sent events (one JSON event per `data:` line)."""
+        if over_limit(current_device.get()["name"]):
+            return _limited()
+        try:
+            body = json.loads((await request.body())[:20000] or b"{}")
+        except ValueError:
+            return JSONResponse({"error": "body must be JSON (AG-UI RunAgentInput)"}, status_code=400)
+        with lock:
+            events = list(public_mod.agent_run(svc, _public_sources(), body))
+            svc.sqlite.audit("hub", "public_agent", current_device.get()["name"], "ok",
+                             {"events": len(events)})
+
+        def stream():
+            for ev in events:
+                yield f"data: {json.dumps(ev)}\n\n"
+
+        return StreamingResponse(stream(), media_type="text/event-stream",
+                                 headers={**security_headers, "Cache-Control": "no-store"})
+
     @mcp.custom_route("/v1/health", methods=["GET"])
     async def health(request: Request):
         dev = current_device.get()
@@ -284,8 +363,8 @@ def build_app(settings: Settings, embedder: Embedder, service: MemoryService | N
             path = request.url.path
             if path == "/favicon.ico":
                 return Response(status_code=404)  # browsers ask for it; not worth an audit row
-            if path == "/console" or path.startswith("/console/"):
-                return await call_next(request)  # static page from an allowlist; holds no data
+            if path in ("/console", "/visitor") or path.startswith(("/console/", "/visitor/")):
+                return await call_next(request)  # static pages from an allowlist; hold no data
             header = request.headers.get("authorization", "")
             token = header[7:].strip() if header.lower().startswith("bearer ") else ""
             with lock:

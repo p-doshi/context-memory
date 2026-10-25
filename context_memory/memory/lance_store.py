@@ -105,7 +105,8 @@ class LanceStore:
         return self._cache
 
     def search(self, vector: list[float], k: int, project: str | None = None,
-               kinds: list[str] | None = None, include_retired: bool = False) -> list[dict]:
+               kinds: list[str] | None = None, include_retired: bool = False,
+               projects: list[str] | None = None) -> list[dict]:
         import numpy as np
 
         snap = self._snapshot()
@@ -117,6 +118,8 @@ class LanceStore:
                 mask &= snap["project"] == project
             if kinds:
                 mask &= np.isin(snap["kind"], kinds)
+            if projects is not None:
+                mask &= np.isin(snap["project"], projects)
             idx = np.flatnonzero(mask)
             if idx.size == 0:
                 return []
@@ -128,11 +131,14 @@ class LanceStore:
             order = np.argsort(-(snap["matrix"][top] @ q))
             return [{"chunk_id": snap["chunk_id"][i], "doc_id": snap["doc_id"][i],
                      "distance": float(1.0 - snap["matrix"][i] @ q)} for i in top[order]]
-        return self._lance_search(vector, k, project, kinds, include_retired)
+        return self._lance_search(vector, k, project, kinds, include_retired, projects)
 
     def _lance_search(self, vector: list[float], k: int, project: str | None,
-                      kinds: list[str] | None, include_retired: bool) -> list[dict]:
+                      kinds: list[str] | None, include_retired: bool,
+                      projects: list[str] | None = None) -> list[dict]:
         clauses = [f"embedding_model = {_quote(self.embedding_model)}"]
+        if projects is not None:
+            clauses.append(f"project IN ({', '.join(_quote(x) for x in projects) or chr(39)*2})")
         if not include_retired:
             clauses.append("is_current = true")
         if project:

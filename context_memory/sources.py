@@ -12,9 +12,11 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from context_memory.util import validate_project
+from context_memory.util import KINDS, validate_choice, validate_project
 
 PROVIDERS = {"claude", "perplexity", "chatgpt", "openrouter", "cursor"}
+# Chats are deliberately absent: they become public only if listed explicitly.
+DEFAULT_PUBLIC_KINDS = ("code", "note", "decision", "paper", "experiment")
 
 
 @dataclass
@@ -40,6 +42,9 @@ class Sources:
     codebases: list[PathSource] = field(default_factory=list)
     docs: list[PathSource] = field(default_factory=list)
     claude_project_map: dict[str, str] = field(default_factory=dict)
+    # Opt-in public surface (visitor site): nothing is public unless listed.
+    public_projects: list[str] = field(default_factory=list)
+    public_kinds: list[str] = field(default_factory=lambda: list(DEFAULT_PUBLIC_KINDS))
 
     def roots(self) -> list[Path]:
         return [s.path for s in self.codebases + self.docs]
@@ -73,4 +78,9 @@ def load_sources(path: Path) -> Sources:
     project_map = data.get("claude_code", {}).get("project_map", {})
     for v in project_map.values():
         validate_project(v)
-    return Sources(accounts, paths("codebase"), paths("docs"), project_map)
+    public = data.get("public", {})
+    public_projects = [validate_project(x) for x in public.get("projects", [])]
+    public_kinds = [validate_choice(k, KINDS, "public kind")
+                    for k in public.get("kinds", DEFAULT_PUBLIC_KINDS)]
+    return Sources(accounts, paths("codebase"), paths("docs"), project_map,
+                   public_projects, public_kinds)

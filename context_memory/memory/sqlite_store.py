@@ -348,7 +348,8 @@ class SQLiteStore:
         return {r["chunk_id"]: _row_to_dict(r) for r in self.conn.execute(q, chunk_ids)}
 
     def bm25_search(self, query: str, k: int, project: str | None = None,
-                    kinds: list[str] | None = None, include_retired: bool = False) -> list[dict]:
+                    kinds: list[str] | None = None, include_retired: bool = False,
+                    projects: list[str] | None = None) -> list[dict]:
         """BM25 over chunk text/title/section. Each query word becomes a term;
         identifiers like audit_log_no_update become phrases of their parts.
 
@@ -364,7 +365,7 @@ class SQLiteStore:
                 terms.append('"' + " ".join(parts) + '"')
         if not terms:
             return []
-        filtered = bool(project or kinds) or not include_retired
+        filtered = bool(project or kinds or projects is not None) or not include_retired
         inner = max(4 * k, 100) if filtered else k
         while True:
             sql = ("SELECT c.chunk_id, c.doc_id, f.score FROM ("
@@ -380,6 +381,9 @@ class SQLiteStore:
             if kinds:
                 sql += f" AND c.kind IN ({', '.join('?' * len(kinds))})"
                 params += kinds
+            if projects is not None:
+                sql += f" AND c.project IN ({', '.join('?' * len(projects)) or 'NULL'})"
+                params += projects
             sql += " ORDER BY f.score LIMIT ?"
             params.append(k)
             rows = self.conn.execute(sql, params).fetchall()

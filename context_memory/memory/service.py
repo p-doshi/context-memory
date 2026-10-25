@@ -340,7 +340,7 @@ class MemoryService:
     # -- search --------------------------------------------------------------
 
     def _rank(self, query: str, k: int, project, kinds, include_retired: bool,
-              mode: str, t: dict) -> list[dict]:
+              mode: str, t: dict, projects: list[str] | None = None) -> list[dict]:
         """Ranked [{chunk_id, doc_id, score}] for one retrieval mode; stage
         times in milliseconds are added to `t`.
 
@@ -357,15 +357,15 @@ class MemoryService:
         if mode == "bm25":
             return [{"chunk_id": h["chunk_id"], "doc_id": h["doc_id"], "score": h["bm25"]}
                     for h in timed("bm25", self.sqlite.bm25_search, query, k, project, kinds,
-                                   include_retired)]
+                                   include_retired, projects)]
         qvec = timed("embed", self.embedder.embed_query, query)
         if mode == "vector":
-            hits = timed("vector", self.lance.search, qvec, k, project, kinds, include_retired)
+            hits = timed("vector", self.lance.search, qvec, k, project, kinds, include_retired, projects)
             return [{"chunk_id": h["chunk_id"], "doc_id": h["doc_id"],
                      "score": 1.0 - h["distance"]} for h in hits]
         pool = max(k, HYBRID_POOL)
-        vec = timed("vector", self.lance.search, qvec, pool, project, kinds, include_retired)
-        kw = timed("bm25", self.sqlite.bm25_search, query, pool, project, kinds, include_retired)
+        vec = timed("vector", self.lance.search, qvec, pool, project, kinds, include_retired, projects)
+        kw = timed("bm25", self.sqlite.bm25_search, query, pool, project, kinds, include_retired, projects)
         fused: dict[str, dict] = {}
         for ranking in (vec, kw):
             for rank, h in enumerate(ranking, 1):
@@ -377,7 +377,8 @@ class MemoryService:
     def memory_search(self, query: str, project: str | None = None,
                       kinds: list[str] | None = None, k: int | None = None,
                       include_retired: bool = False, actor: str = "mcp",
-                      recipient: str = "owner", mode: str | None = None) -> dict:
+                      recipient: str = "owner", mode: str | None = None,
+                      projects: list[str] | None = None) -> dict:
         """Retrieve chunks for `recipient` (see policy.disclosure.RECIPIENTS).
 
         Every result passes the Disclosure Gate for that recipient, and
@@ -393,7 +394,7 @@ class MemoryService:
         mode = validate_choice(mode or self.settings.search_mode, SEARCH_MODES, "mode")
         t_start = time.perf_counter()
         timings: dict[str, float] = {}
-        hits = self._rank(query, k, project, kinds, include_retired, mode, timings)
+        hits = self._rank(query, k, project, kinds, include_retired, mode, timings, projects)
         t_hydrate = time.perf_counter()
         gate_s = verify_s = 0.0
         records = self.sqlite.get_chunks([h["chunk_id"] for h in hits])

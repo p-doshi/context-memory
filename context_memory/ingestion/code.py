@@ -200,6 +200,9 @@ def ingest_codebase(svc: MemoryService, root: Path, project: str, max_files: int
         suffix = p.suffix
         if suffix not in CODE_SUFFIXES and suffix.lower() not in MARKDOWN_SUFFIXES:
             continue
+        # Third-party vendored and minified files are noise for retrieval.
+        if "vendor" in p.relative_to(root).parts or p.name.endswith((".min.js", ".min.css")):
+            continue
         if len(results) >= max_files:
             results.append({"path": str(p), "status": "stopped",
                             "error": f"file budget of {max_files} reached"})

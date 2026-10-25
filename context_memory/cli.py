@@ -101,6 +101,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("hub", help="run only the hub (HTTP MCP + session upload), no indexing")
     sub.add_parser("security-check", help="report on the security posture of this install")
     sub.add_parser("console", help="open the owner web console in the browser")
+    sub.add_parser("visitor", help="preview the public visitor page (only [public] projects)")
 
     sub.add_parser("accounts", help="list accounts from sources.toml (no secrets)")
     s = sub.add_parser("secret", help="manage API keys in the OS keychain")
@@ -175,6 +176,16 @@ def main(argv: list[str] | None = None) -> int:
                 print("revoked" if hub.revoke_device(db, args.name) else "no active device by that name")
         finally:
             db.close()
+        return 0
+    if args.cmd == "visitor":
+        import webbrowser
+        from context_memory.memory.sqlite_store import SQLiteStore
+        from context_memory.server import hub
+        db = SQLiteStore(settings.sqlite_path)
+        token = hub.add_device(db, "visitor-preview", None, rotate=True, scopes="public")
+        db.close()
+        webbrowser.open(f"http://127.0.0.1:{settings.hub_port}/visitor/#t={token}")
+        print("visitor preview opened (public scope only; projects listed under [public])")
         return 0
     if args.cmd == "console":
         import webbrowser

@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Project explorer</title>
+<link rel="stylesheet" href="/visitor/visitor.css">
+</head>
+<body>
+<header>
+  <h1>Project explorer</h1>
+  <p class="sub">Ask about this project's code, design and decisions. Answers are excerpts from its
+     public memory, with their sources.</p>
+</header>
+<main>
+  <section class="chat" aria-label="Ask the project">
+    <div id="log" aria-live="polite"></div>
+    <form id="ask">
+      <input id="question" autocomplete="off" placeholder="e.g. How does the memory keep private data out of answers?" required>
+      <button type="submit">Ask</button>
+    </form>
+  </section>
+  <aside>
+    <h2>Public projects</h2>
+    <div id="projects" class="muted">loading…</div>
+    <h2>Architecture</h2>
+    <p class="muted small">Modules and the imports between them. Click a module to ask about it.</p>
+    <div id="arch"></div>
+  </aside>
+</main>
+<footer class="muted small">Only material the owner marked public is searched. Personal details are
+  withheld automatically.</footer>
+<script src="/visitor/vendor/cytoscape.min.js"></script>
+<script src="/visitor/visitor.js"></script>
+</body>
+</html>
