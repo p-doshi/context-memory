@@ -1,11 +1,38 @@
 #!/usr/bin/env bash
 # Set up a Linux machine to use the memory hub through an SSH tunnel.
-# Run from a bundle directory holding: cmh_push.py, claude_memory.md, cmh.token
-# (and this script). The bundle is deleted afterwards, token included.
+# Either run from a bundle directory holding: cmh_push.py, claude_memory.md,
+# cmh.token (and this script), or with the link to the hub up:
+#   bash <(curl -fsS http://127.0.0.1:8765/client/setup_remote.sh) --pair CODE
+# where CODE comes from `cmh device pair <name>` on the hub machine. The bundle
+# (or temporary folder) is deleted afterwards, token included.
 # Idempotent: safe to run again.
 set -euo pipefail
 PORT="${CMH_PORT:-8765}"
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [ "${1:-}" = "--pair" ]; then
+  [ -n "${2:-}" ] || { echo "usage: setup_remote.sh --pair CODE" >&2; exit 2; }
+  DIR="$(mktemp -d)"
+  chmod 700 "$DIR"
+  for f in cmh_push.py claude_memory.md; do
+    curl -fsS -o "$DIR/$f" "http://127.0.0.1:${PORT}/client/$f"
+  done
+  # The token goes straight from the response into a 600 file, never into argv.
+  python3 - "$2" "$DIR/cmh.token" "$PORT" <<'PY'
+import json, os, sys, urllib.request, urllib.error
+code, out, port = sys.argv[1:4]
+req = urllib.request.Request(f"http://127.0.0.1:{port}/v1/pair", method="POST",
+                             data=json.dumps({"code": code}).encode(),
+                             headers={"Content-Type": "application/json"})
+try:
+    res = json.load(urllib.request.urlopen(req, timeout=15))
+except urllib.error.HTTPError as e:
+    sys.exit(f"pairing failed: {e.code} {e.read().decode(errors='replace')}")
+fd = os.open(out, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+os.write(fd, res["token"].encode()); os.close(fd)
+print("paired as device", res["device"])
+PY
+fi
 
 mkdir -p ~/.local/bin ~/.config/cmh ~/.claude
 install -m 755 "$DIR/cmh_push.py" ~/.local/bin/cmh_push.py

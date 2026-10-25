@@ -48,9 +48,30 @@ that has the tunnel: `ssh -N -L 8765:127.0.0.1:8765 server5`.
 
 ## 2. Other laptop
 
+Either through a lab server that already holds the hub's tunnel:
+
 ```sh
 ssh -N -L 8765:127.0.0.1:8765 server5.example.org   # keep open while working
 ```
+
+or directly into the hub machine on the same network (Linux laptop):
+
+1. On the laptop: `bash client/hub-link.sh key` prints a public key.
+2. On the hub, elevated: `scripts\enable-ssh-link.ps1 -PublicKey "<that line>"`. It
+   enables OpenSSH Server with password login off, a standard account that may only
+   forward to `127.0.0.1:8765`, and a firewall rule for Private networks on the local
+   subnet. It prints the host and the host key fingerprint.
+3. On the laptop: `bash client/hub-link.sh install <host> <fingerprint>`. The
+   fingerprint is checked before the host is trusted; a systemd user unit keeps
+   the link up.
+4. On the hub: `cmh device pair laptop2` prints a one-time code (10 minutes).
+5. On the laptop:
+   `bash <(curl -fsS http://127.0.0.1:8765/client/setup_remote.sh) --pair <code>`.
+   The token goes from the hub into a 600 file without passing through a
+   terminal, chat or command line.
+
+Away from the home network the direct link does not work (by design: the SSH
+rule is LAN-only); use the lab-server route instead.
 
 ## 3. Clusters with multifactor login
 

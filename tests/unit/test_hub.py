@@ -225,3 +225,36 @@ def test_console_static_and_admin_api(client, svc):
     assert e.status_code == 200
     s = client.get("/v1/console/search", params={"q": "graph seed"}, headers={"Authorization": f"Bearer {admin}"})
     assert s.json()["results"]
+
+
+def test_pairing_code_is_single_use_and_scoped(client, svc, settings):
+    home = settings.data_dir.parent
+    code = hub.create_pair_code(home, "laptop2", None, scopes="read,context")
+    assert not any(code in p.read_text() or code in p.name for p in (home / "config" / "pairing").iterdir())
+    r = client.post("/v1/pair", json={"code": code.lower()})
+    assert r.status_code == 200 and r.json()["device"] == "laptop2"
+    tok = r.json()["token"]
+    assert client.get("/v1/health", headers={"Authorization": f"Bearer {tok}"}).json()["device"] == "laptop2"
+    assert client.get("/v1/context", params={"cwd": "/x"}, headers={"Authorization": f"Bearer {tok}"}).status_code == 200
+    assert client.post("/v1/sessions", headers={"Authorization": f"Bearer {tok}"}, content=b"x").status_code == 403
+    assert client.post("/v1/pair", json={"code": code}).status_code == 403          # spent
+
+
+def test_pairing_rejects_expired_and_locks_after_failures(client, settings, monkeypatch):
+    home = settings.data_dir.parent
+    code = hub.create_pair_code(home, "laptop3", None)
+    real = hub.time.time
+    monkeypatch.setattr(hub.time, "time", lambda: real() + hub.PAIR_TTL_SECONDS + 1)
+    assert client.post("/v1/pair", json={"code": code}).status_code == 403
+    monkeypatch.setattr(hub.time, "time", real)
+    live = hub.create_pair_code(home, "laptop4", None)
+    codes = [client.post("/v1/pair", json={"code": "WRONG-CODE-0000"}).status_code
+             for _ in range(hub.PAIR_MAX_FAILURES - 1)]  # the expired try counted too
+    assert codes[-1] == 403 and client.post("/v1/pair", json={"code": live}).status_code == 429
+    assert not list((home / "config" / "pairing").glob("*.json"))  # pending codes cancelled
+
+
+def test_client_files_are_served_from_an_allowlist(client):
+    assert "cmh_push" in client.get("/client/setup_remote.sh").text
+    assert client.get("/client/cmh.token").status_code == 404
+    assert client.get("/client/..%2Fpyproject.toml").status_code == 404

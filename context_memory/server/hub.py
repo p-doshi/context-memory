@@ -1,10 +1,15 @@
 """The hub: this machine's memory served to Claude Code sessions elsewhere.
 
-Routes (all require `Authorization: Bearer <device token>`):
+Routes (require `Authorization: Bearer <device token>` unless noted):
 
   POST /mcp            MCP over streamable HTTP (search, write, graph, stats)
   POST /v1/sessions    upload a Claude Code transcript (JSONL, optionally gzip)
+  GET  /v1/context     session-start context pack
   GET  /v1/health      liveness and the calling device's name
+  /v1/console/*, /v1/public/*   owner console (admin) and visitor (public) APIs
+  POST /v1/pair        no token: trade a one-time code from `cmh device pair` for a token
+  GET  /client/<file>  no token: the client scripts (no secrets in them)
+  GET  /console, /visitor  no token: static pages that hold no data
 
 Each remote machine gets its own token (`cmh device add <name>`), stored only
 as a SHA-256, revocable at any time. The hub binds 127.0.0.1; other machines
@@ -108,6 +113,61 @@ def make_bundle(db: SQLiteStore, name: str, account: str | None, devices_dir: Pa
     if os.name != "nt":
         (bundle / "cmh.token").chmod(0o600)
     return bundle
+
+
+# -- pairing: a short-lived one-time code instead of copying a token file -------
+
+PAIR_TTL_SECONDS = 600
+PAIR_MAX_FAILURES = 20  # per 10 minutes; then every pending code is cancelled
+CLIENT_FILES = ("cmh_push.py", "setup_remote.sh", "claude_memory.md", "hub-link.sh")
+
+
+def _pair_dir(home: Path) -> Path:
+    return home / "config" / "pairing"
+
+
+def create_pair_code(home: Path, name: str, account: str | None,
+                     scopes: str = DEFAULT_SCOPES) -> str:
+    """A one-time code (stored as SHA-256 only) that the new device trades for
+    its token at /v1/pair within PAIR_TTL_SECONDS."""
+    name = slugify(name, "")
+    if not name:
+        raise ValueError("device name must contain letters or digits")
+    alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # no 0/O, 1/I/L
+    code = "-".join("".join(secrets.choice(alphabet) for _ in range(4)) for _ in range(3))
+    d = _pair_dir(home)
+    d.mkdir(parents=True, exist_ok=True)
+    (d / f"{_hash(code)}.json").write_text(json.dumps(
+        {"name": name, "account": account, "scopes": scopes,
+         "expires": time.time() + PAIR_TTL_SECONDS}))
+    return code
+
+
+def redeem_pair_code(db: SQLiteStore, home: Path, code: str) -> tuple[str, str] | None:
+    """(device name, token) for a valid unexpired code, which is then spent."""
+    d = _pair_dir(home)
+    for stale in d.glob("*.json") if d.exists() else []:
+        try:
+            if json.loads(stale.read_text())["expires"] < time.time():
+                stale.unlink()
+        except (OSError, ValueError, KeyError):
+            stale.unlink(missing_ok=True)
+    f = d / f"{_hash(code.strip().upper())}.json"
+    if not f.exists():
+        return None
+    entry = json.loads(f.read_text())
+    f.unlink()
+    token = add_device(db, entry["name"], entry["account"], rotate=True, scopes=entry["scopes"])
+    db.audit("hub", "device_pair", entry["name"], "ok", {"scopes": entry["scopes"]})
+    return entry["name"], token
+
+
+def cancel_pair_codes(home: Path) -> int:
+    d = _pair_dir(home)
+    files = list(d.glob("*.json")) if d.exists() else []
+    for f in files:
+        f.unlink(missing_ok=True)
+    return len(files)
 
 
 def revoke_device(db: SQLiteStore, name: str) -> bool:
@@ -308,6 +368,40 @@ def build_app(settings: Settings, embedder: Embedder, service: MemoryService | N
         return StreamingResponse(stream(), media_type="text/event-stream",
                                  headers={**security_headers, "Cache-Control": "no-store"})
 
+    # -- pairing and client files (no token: reachable only on loopback/tunnels) --
+    client_dir = Path(__file__).resolve().parents[2] / "client"
+    home = settings.data_dir.parent
+    pair_failures: list[float] = []
+
+    @mcp.custom_route("/client/{name}", methods=["GET"])
+    async def client_file(request: Request):
+        name = request.path_params["name"]
+        if name not in CLIENT_FILES or not (client_dir / name).is_file():
+            return Response("not found", status_code=404)
+        return FileResponse(client_dir / name, media_type="text/plain; charset=utf-8",
+                            headers={"Cache-Control": "no-store"})
+
+    @mcp.custom_route("/v1/pair", methods=["POST"])
+    async def pair(request: Request):
+        now = time.time()
+        pair_failures[:] = [t for t in pair_failures if now - t < 600]
+        if len(pair_failures) >= PAIR_MAX_FAILURES:
+            return JSONResponse({"error": "too many wrong codes; create a new one"}, status_code=429)
+        try:
+            code = str(json.loads((await request.body())[:1000] or b"{}").get("code", ""))[:40]
+        except (ValueError, AttributeError):
+            return JSONResponse({"error": "body must be JSON {\"code\": ...}"}, status_code=400)
+        with lock:
+            got = redeem_pair_code(svc.sqlite, home, code) if code else None
+            if got is None:
+                pair_failures.append(now)
+                svc.sqlite.audit("hub", "device_pair", None, "denied", {"failures": len(pair_failures)})
+                if len(pair_failures) >= PAIR_MAX_FAILURES:
+                    cancel_pair_codes(home)
+                return JSONResponse({"error": "unknown or expired code"}, status_code=403)
+        name, token = got
+        return JSONResponse({"device": name, "token": token}, headers={"Cache-Control": "no-store"})
+
     @mcp.custom_route("/v1/health", methods=["GET"])
     async def health(request: Request):
         dev = current_device.get()
@@ -366,6 +460,8 @@ def build_app(settings: Settings, embedder: Embedder, service: MemoryService | N
                 return Response(status_code=404)  # browsers ask for it; not worth an audit row
             if path in ("/console", "/visitor") or path.startswith(("/console/", "/visitor/")):
                 return await call_next(request)  # static pages from an allowlist; hold no data
+            if path == "/v1/pair" or path.startswith("/client/"):
+                return await call_next(request)  # one-time code / public client files
             header = request.headers.get("authorization", "")
             token = header[7:].strip() if header.lower().startswith("bearer ") else ""
             with lock:

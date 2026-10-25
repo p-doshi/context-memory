@@ -93,7 +93,8 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--max", type=int, default=500, help="max conversations per sync")
 
     s = sub.add_parser("device", help="machines allowed to use the hub")
-    s.add_argument("action", choices=["add", "list", "revoke"])
+    s.add_argument("action", choices=["add", "pair", "list", "revoke"],
+                   help="pair: print a one-time code the machine trades for its token")
     s.add_argument("name", nargs="?", help="e.g. cluster, server5, laptop2")
     s.add_argument("--scopes", default="read,write,upload,context",
                    help="comma list of read, write, upload, context, public, admin")
@@ -164,6 +165,13 @@ def main(argv: list[str] | None = None) -> int:
             elif not args.name:
                 print("error: device name required", file=sys.stderr)
                 return 2
+            elif args.action == "pair":
+                code = hub.create_pair_code(settings.data_dir.parent, args.name, args.account,
+                                            scopes=args.scopes)
+                mins = hub.PAIR_TTL_SECONDS // 60
+                print(f"pairing code for {args.name!r} (one use, expires in {mins} minutes): {code}")
+                print("on that machine, with its link to the hub up:")
+                print(f"  bash <(curl -fsS http://127.0.0.1:{settings.hub_port}/client/setup_remote.sh) --pair {code}")
             elif args.action == "add" and args.bundle:
                 bundle = hub.make_bundle(db, args.name, args.account,
                                          settings.data_dir.parent / "config" / "devices",

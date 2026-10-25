@@ -78,6 +78,20 @@ def run(settings: Settings, svc=None) -> list[dict]:
         add("firewall egress block for interpreter", "PASS" if present else "WARN",
             "non-loopback connections from the harness interpreter are blocked" if present
             else "interpreter may reach the network (run scripts/harden-host.ps1 as admin)")
+        # SSH link for other machines (scripts/enable-ssh-link.ps1): if sshd
+        # runs, it must be key-only and limited to the link account.
+        sshd = _ps("(Get-Service sshd -ErrorAction SilentlyContinue).Status")
+        if sshd.strip() == "Running":
+            cfg_path = Path(os.environ.get("ProgramData", r"C:\ProgramData")) / "ssh" / "sshd_config"
+            try:
+                cfg = cfg_path.read_text(errors="replace")
+            except OSError:
+                cfg = ""
+            lines = {l.strip().lower() for l in cfg.splitlines()}
+            ok = "passwordauthentication no" in lines and any(l.startswith("allowusers ") for l in lines)
+            add("ssh server", "PASS" if ok else ("UNKNOWN" if not cfg else "FAIL"),
+                "key-only, one link account" if ok else
+                ("cannot read sshd_config" if not cfg else "sshd runs without the link restrictions"))
         enc = _ps("(Get-CimInstance -Namespace root/CIMv2/Security/MicrosoftVolumeEncryption "
                   "-ClassName Win32_EncryptableVolume -Filter \"DriveLetter='C:'\" "
                   "-ErrorAction SilentlyContinue).ProtectionStatus")
