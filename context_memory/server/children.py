@@ -61,8 +61,10 @@ def plan(settings, secrets_get) -> list[tuple[str, list[str], dict[str, str]]]:
     """(name, argv, env) for each helper that is enabled and configured."""
     out = []
     if settings.wsl_vpn_distro:
-        # WSL stops an idle VM (and with it the VPN session); a sleeping process keeps it up.
-        out.append(("wsl-vm", ["wsl.exe", "-d", settings.wsl_vpn_distro, "--exec", "sleep", "infinity"], {}))
+        # The VPN runs in the foreground inside the VM, which also keeps WSL from
+        # stopping the idle VM; without a command, a sleeping process does that.
+        cmd = [settings.wsl_vpn_command] if settings.wsl_vpn_command else ["sleep", "infinity"]
+        out.append(("wsl-vpn", ["wsl.exe", "-d", settings.wsl_vpn_distro, "--exec", *cmd], {}))
     if not settings.public_enabled:
         return out
     if settings.llm_server_exe and settings.llm_model_path and settings.public_llm_url:

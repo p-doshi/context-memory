@@ -69,6 +69,10 @@ class Settings(BaseSettings):
     # When an organisation's VPN runs inside WSL2 (vpn_route.py), the daemon keeps
     # that distribution running so the VPN session survives idle periods.
     wsl_vpn_distro: str | None = None
+    # Foreground VPN command inside that distribution (scripts/wsl-vpn/setup-openconnect.sh
+    # installs /usr/local/bin/dal-vpn); the daemon restarts it when it exits. Unset: the
+    # daemon only keeps the VM running.
+    wsl_vpn_command: str | None = None
     # SSH Host patterns routed through the WSL VPN by `cmh vpn-route wsl`.
     vpn_route_patterns: list[str] = Field(default_factory=lambda: [
         "bigdata*", "*.cs.dal.ca", "129.173.*", "cmh-tunnel-*"])

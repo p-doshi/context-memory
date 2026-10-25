@@ -174,7 +174,8 @@ def main(argv: list[str] | None = None) -> int:
         changed = vpn_route.set_route(cfg, settings.vpn_route_patterns, args.mode, args.distro)
         print(f"{args.mode}: {len(changed)} host block(s): {', '.join(changed) or 'none'}")
         if args.mode == "wsl":
-            print(f"keep the VM up for the daemon: setx CMH_WSL_VPN_DISTRO {args.distro}, then restart it")
+            print(f"for the daemon: setx CMH_WSL_VPN_DISTRO {args.distro} and "
+                  "setx CMH_WSL_VPN_COMMAND /usr/local/bin/dal-vpn, then restart it")
         return 0
     if args.cmd == "init":
         from context_memory.setup_init import init
