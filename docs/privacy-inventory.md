@@ -35,6 +35,10 @@ Application-level encryption is roadmap Week 6.
 | Google | Chrome is Google software: update checks, Safe Browsing. A harness profile signed in to Chrome can sync profile data to the Google account. | Harness profiles should stay signed out of Chrome (sign-in to claude.ai/Perplexity with Google does not require Chrome sign-in). |
 | Hugging Face | IP address, model name, library versions on each model load | **Off by default** (`HF_HUB_OFFLINE=1`, telemetry disabled). Measured: zero network calls during model load and search. `CMH_ALLOW_MODEL_DOWNLOAD=1` only to fetch a model. |
 | PyPI, download.pytorch.org, GitHub releases (Python builds via uv) | Package downloads at install time | No user data. |
+| GitHub releases (llama.cpp build b11875), Hugging Face (Qwen/Qwen3-1.7B-GGUF at commit 90862c4b) | One-time downloads of the visitor answer model and its server; SHA-256 checked against the published digests | No user data. The model runs offline on loopback. |
+| Cloudflare (tunnel) | When the public site is enabled: visitor requests and responses for the public node pass through Cloudflare's edge in plain text there. They contain only public material and visitors' own questions. | Not yet set up (needs the owner's Cloudflare account and domain). The private hub is never behind the tunnel. |
+| Vercel | Hosts the static site files (no memory content); visitors' browsers then call the API host directly | Not yet set up. |
+| Google Fonts | Not used: the site uses system font stacks so visitors' browsers contact no font CDN | — |
 
 ## Checked and not sending anything
 

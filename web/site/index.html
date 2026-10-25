@@ -19,6 +19,11 @@
     <a class="btn" href="#ask">Ask the project</a>
     <a class="btn ghost" id="repo" href="#">Source code</a>
   </nav>
+  <pre class="quickstart" aria-label="Quick start"><span class="c"># after installing uv; full steps in the guide</span>
+git clone https://github.com/p-doshi/context-memory &amp;&amp; cd context-memory
+uv sync --locked --extra embed
+uv run cmh init --code ~/my-repo --download-model
+uv run cmh daemon --once &amp;&amp; uv run cmh search "how did I set up training"</pre>
 </header>
 
 <main class="wrap">

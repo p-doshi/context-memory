@@ -140,7 +140,8 @@ async function ask(question) {
         else if (ev.type === "TEXT_MESSAGE_CONTENT") answer.textContent += ev.delta;
         else if (ev.type === "TEXT_MESSAGE_END") history.push({ id: ev.messageId, role: "assistant", content: answer.textContent });
         else if (ev.type === "RUN_ERROR") step.textContent = "Error: " + ev.message;
-        else if (ev.type === "RUN_FINISHED") step.textContent = hits.length ? "Sources" : "No matching excerpts.";
+        else if (ev.type === "RUN_FINISHED")
+          step.textContent = hits.length ? "Answered from " + hits.length + " excerpts, listed below the answer." : "No matching excerpts.";
       }
     }
     if (hits.length) {
