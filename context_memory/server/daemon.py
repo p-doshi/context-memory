@@ -100,6 +100,12 @@ def run_pass(svc, settings: Settings) -> dict:
     remote = process_remote_inbox(svc, settings.data_dir.parent, sources.claude_project_map)
     if remote:
         summary["remote_sessions"] = remote
+    code = process_remote_code(svc, settings.data_dir.parent, sources.claude_project_map)
+    if code:
+        summary["remote_code"] = code
+    local_code = index_session_repos(svc, sources)
+    if local_code:
+        summary["session_repos"] = local_code
     summary.update(browser_syncs(svc, settings, sources))
     # Every ingest appends a small LanceDB fragment; vector search slows as they
     # pile up (456 fragments: ~100 ms per search, measured). Compact regularly.
@@ -276,6 +282,70 @@ def process_remote_inbox(svc, home: Path, project_map: dict[str, str]) -> dict:
     state_file.parent.mkdir(parents=True, exist_ok=True)
     state_file.write_text(json.dumps(state))
     return _summarize(results) if results else {}
+
+
+def process_remote_code(svc, home: Path, project_map: dict[str, str]) -> dict:
+    """Index code bundles other machines uploaded (<home>/inbox/remote/<device>/_code/*.json):
+    changed files under the project of that repository's sessions, deleted files retired.
+    A bundle is removed once indexed; the store keeps the text."""
+    from context_memory.ingestion.claude_code import project_slug
+    from context_memory.ingestion.code import ingest_code_text
+    from context_memory.memory.service import IngressRejected
+    results: list[dict] = []
+    for f in sorted((home / "inbox" / "remote").glob("*/_code/*.json")):
+        try:
+            b = json.loads(f.read_text(encoding="utf-8"))
+            device, root = b["device"], b["root"].rstrip("/")
+            project = project_map.get(b.get("project_dir") or "") or project_slug(b.get("cwd") or root,
+                                                                                    b.get("project_dir") or "")
+            for item in b.get("files") or []:
+                try:
+                    r = ingest_code_text(svc, item["text"], item["path"], project,
+                                         f"remote://{device}{root}/{item['path']}", version=item.get("sha"))
+                    results.append(r)
+                except (IngressRejected, ValueError) as e:
+                    results.append({"status": "rejected", "error": str(e)[:200]})
+            gone = [f"remote://{device}{root}/{rel}" for rel in b.get("removed") or []]
+            for _ in range(svc.retire_paths(project, gone, "source-deleted")):
+                results.append({"status": "retired-deleted"})
+            f.unlink()
+        except Exception as e:  # one bad bundle must not stop the others
+            log.warning("code bundle %s: %r", f, e)
+            results.append({"status": "error"})
+    return _summarize(results) if results else {}
+
+
+def index_session_repos(svc, sources, max_files: int = 2000) -> dict:
+    """Git repositories this laptop's Claude Code sessions ran in are indexed as code,
+    like configured codebases (owner's choice, 2026-10-25: 'repos Claude Code works in')."""
+    import subprocess
+    from context_memory.ingestion.code import ingest_codebase
+    configured = {Path(c.path).resolve() for c in sources.codebases}
+    roots: dict[Path, str] = {}
+    for cwd, project in svc.sqlite.conn.execute(
+            "SELECT DISTINCT json_extract(meta, '$.cwd'), project FROM documents "
+            "WHERE json_extract(meta, '$.platform') = 'claude-code' AND path NOT LIKE '%/inbox/remote/%' "
+            "AND json_extract(meta, '$.cwd') IS NOT NULL"):
+        try:
+            if not Path(cwd).is_dir():
+                continue
+            out = subprocess.run(["git", "-C", cwd, "rev-parse", "--show-toplevel"], capture_output=True,
+                                 text=True, timeout=15, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if out.returncode == 0:
+            root = Path(out.stdout.strip()).resolve()
+            if root not in configured:
+                roots.setdefault(root, project)
+    summary: dict[str, dict] = {}
+    for root, project in roots.items():
+        svc.settings.ingest_roots = list(dict.fromkeys(svc.settings.ingest_roots + [root]))
+        try:
+            summary[f"repo:{project}"] = _summarize(ingest_codebase(svc, root, project, max_files))
+        except Exception as e:
+            log.warning("session repo %s: %r", root, e)
+            summary[f"repo:{project}"] = {"failed": 1}
+    return summary
 
 
 def process_inbox(svc, inbox: Path, sources) -> dict:

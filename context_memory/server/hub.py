@@ -55,7 +55,7 @@ DEFAULT_SCOPES = "read,write,upload,context"
 
 # Route prefix -> scope a device needs. /v1/health only needs a valid token.
 # "embed" (the public node) gets query vectors only, never memory content.
-ROUTE_SCOPES = [("/mcp", "read"), ("/v1/sessions", "upload"), ("/v1/context", "context"),
+ROUTE_SCOPES = [("/mcp", "read"), ("/v1/sessions", "upload"), ("/v1/code", "upload"), ("/v1/context", "context"),
                 ("/v1/public", "public"), ("/v1/console", "admin"), ("/v1/embed", "embed")]
 
 
@@ -543,6 +543,32 @@ def build_app(settings: Settings, embedder: Embedder, service: MemoryService | N
             text = svc.context_pack(cwd, recipient=settings.mcp_recipient,
                                     project_map=project_map, actor="hub")
         return JSONResponse({"context": text})
+
+    @mcp.custom_route("/v1/code", methods=["POST"])
+    async def upload_code(request: Request):
+        """Changed source files of a repository on another machine (client/cmh_push.py),
+        stored for the daemon to index on its next pass."""
+        dev = current_device.get()
+        body = await request.body()
+        if len(body) > MAX_UPLOAD_BYTES:
+            return JSONResponse({"error": "bundle too large"}, status_code=413)
+        if request.headers.get("content-encoding") == "gzip":
+            body = gzip.decompress(body)
+        try:
+            bundle = json.loads(body)
+            assert isinstance(bundle.get("root"), str) and isinstance(bundle.get("files"), list)
+        except (ValueError, AssertionError):
+            return JSONResponse({"error": "body must be JSON {root, cwd, project_dir, files, removed}"},
+                                status_code=400)
+        dest = inbox / dev["name"] / "_code" / f"{time.strftime('%Y%m%dT%H%M%S')}-{secrets.token_hex(4)}.json"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        tmp = dest.with_suffix(".part")
+        tmp.write_text(json.dumps({**bundle, "device": dev["name"], "received_at": utcnow()}))
+        tmp.replace(dest)
+        with lock:
+            svc.sqlite.audit(f"hub:{dev['name']}", "code_upload", bundle["root"][-120:], "queued",
+                             {"files": len(bundle["files"]), "removed": len(bundle.get("removed") or [])})
+        return JSONResponse({"device": dev["name"], "status": "queued"}, status_code=202)
 
     @mcp.custom_route("/v1/sessions", methods=["POST"])
     async def upload_session(request: Request):

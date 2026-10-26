@@ -26,6 +26,12 @@ Commands:
 
 Transcripts are sent as opaque files; the hub parses them. The format is
 internal to Claude Code and changes between versions.
+
+Code: when a session ends inside a git repository, hook-end also queues that
+repository. Its tracked source and documentation files (no data folders, key or
+environment files, notebook outputs, or files over 500 KB) are sent if they
+changed since the last upload, with the list of files deleted since. Set
+CMH_CODE=0 (or "code": false in push.json) to turn this off on a machine.
 """
 
 import gzip
@@ -45,6 +51,18 @@ SENT = STATE_DIR / "sent.json"
 LOCK = STATE_DIR / "flush.lock"
 LOG = STATE_DIR / "push.log"
 IDLE_SECONDS = 600  # sweep skips transcripts written to in the last 10 minutes
+CODE_STATE = STATE_DIR / "code.json"
+CODE_SUFFIXES = {
+    ".py", ".pyi", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".java", ".kt", ".c", ".h", ".cc", ".cpp",
+    ".hpp", ".cs", ".go", ".rs", ".r", ".jl", ".m", ".f90", ".sh", ".ps1", ".sql", ".toml",
+    ".yaml", ".yml", ".cfg", ".ini", ".md", ".markdown", ".rst", ".txt", ".ipynb", ".slurm", ".sbatch",
+}
+CODE_SKIP_DIRS = {"data", "datasets", "raw", "raw_data", "checkpoints", "ckpt", "wandb", "mlruns", "outputs",
+                  "logs", "node_modules", "venv", ".venv", "env", "vendor", "site-packages", "__pycache__",
+                  ".ipynb_checkpoints", "build", "dist"}
+CODE_SKIP_NAME = ("secret", "credential", "password", "token", "id_rsa", "id_ed25519")
+CODE_MAX_BYTES = 500_000
+CODE_BATCH_BYTES = 3_000_000
 
 
 def config():
@@ -52,7 +70,7 @@ def config():
     f = Path.home() / ".config" / "cmh" / "push.json"
     if f.exists():
         cfg.update(json.loads(f.read_text()))
-    for key in ("hub_url", "token_file", "account"):
+    for key in ("hub_url", "token_file", "account", "code"):
         env = os.environ.get("CMH_" + key.upper())
         if env:
             cfg[key] = env
@@ -138,6 +156,97 @@ def upload(cfg, tok, item):
     return True
 
 
+def code_files(root):
+    """Tracked files worth indexing: source and docs, no data, keys or big files."""
+    out = subprocess.run(["git", "-C", str(root), "ls-files", "-z"], capture_output=True, timeout=60)
+    if out.returncode != 0:
+        return {}
+    files = {}
+    for rel in (n for n in out.stdout.decode("utf-8", "replace").split("\0") if n):
+        p = Path(root) / rel
+        parts = [x.lower() for x in Path(rel).parts]
+        name = parts[-1]
+        if (p.suffix.lower() not in CODE_SUFFIXES or any(x in CODE_SKIP_DIRS for x in parts[:-1])
+                or name.startswith(".env") or name.endswith((".pem", ".key", ".min.js"))
+                or any(w in name for w in CODE_SKIP_NAME)):
+            continue
+        try:
+            if not p.is_file() or p.stat().st_size > CODE_MAX_BYTES:
+                continue
+            raw = p.read_bytes()
+        except OSError:
+            continue
+        if b"\0" in raw[:8192]:
+            continue
+        text = raw.decode("utf-8", "replace")
+        if p.suffix.lower() == ".ipynb":
+            text = notebook_source(text)
+            if text is None:
+                continue
+        files[rel] = text
+    return files
+
+
+def notebook_source(text):
+    """A notebook's cells as Markdown and code, without outputs (which can hold data)."""
+    try:
+        cells = json.loads(text).get("cells") or []
+    except ValueError:
+        return None
+    parts = []
+    for c in cells:
+        src = c.get("source") or ""
+        src = "".join(src) if isinstance(src, list) else src
+        if c.get("cell_type") == "code":
+            parts.append("```python\n" + src + "\n```")
+        elif src.strip():
+            parts.append(src)
+    return "\n\n".join(parts)
+
+
+def upload_code(cfg, tok, item):
+    """Send a repository's changed source files (and deletions) since the last upload."""
+    import hashlib
+    cwd = item["code"]
+    top = subprocess.run(["git", "-C", cwd, "rev-parse", "--show-toplevel"], capture_output=True, timeout=30)
+    if top.returncode != 0:
+        return True   # not a git repository: nothing to index
+    root = top.stdout.decode().strip()
+    state = json.loads(CODE_STATE.read_text()) if CODE_STATE.exists() else {}
+    known = state.get(root, {})
+    files = code_files(root)
+    digest = {rel: hashlib.sha256(text.encode("utf-8")).hexdigest() for rel, text in files.items()}
+    changed = [rel for rel in sorted(files) if known.get(rel) != digest[rel]]
+    removed = sorted(set(known) - set(files))
+    batches, cur, size = [], [], 0
+    for rel in changed:
+        if cur and size + len(files[rel]) > CODE_BATCH_BYTES:
+            batches.append(cur)
+            cur, size = [], 0
+        cur.append(rel)
+        size += len(files[rel])
+    batches.append(cur)
+    for i, batch in enumerate(batches):
+        body = {"root": root, "cwd": cwd, "project_dir": item.get("project_dir") or "",
+                "files": [{"path": rel, "sha": digest[rel], "text": files[rel]} for rel in batch],
+                "removed": removed if i == len(batches) - 1 else []}
+        if not body["files"] and not body["removed"]:
+            continue
+        req = urllib.request.Request(cfg["hub_url"].rstrip("/") + "/v1/code",
+                                     data=gzip.compress(json.dumps(body).encode()), method="POST")
+        req.add_header("Authorization", "Bearer " + tok)
+        req.add_header("Content-Encoding", "gzip")
+        req.add_header("Content-Type", "application/json")
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            log(f"code {root}: sent {len(batch)} file(s), {len(body['removed'])} removed: {resp.status}")
+        known.update({rel: digest[rel] for rel in batch})
+        for rel in body["removed"]:
+            known.pop(rel, None)
+        state[root] = known
+        CODE_STATE.write_text(json.dumps(state))
+    return True
+
+
 def flush(cfg):
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     if os.name == "posix":
@@ -155,16 +264,17 @@ def flush(cfg):
             it = json.loads(line)
         except ValueError:
             continue
-        if it["path"] not in seen:  # newest upload of a file covers older entries
-            seen.add(it["path"])
+        key = it.get("path") or "code:" + it.get("code", "")
+        if key not in seen:  # newest upload of a file covers older entries
+            seen.add(key)
             items.append(it)
     tok = token(cfg)
     remaining = []
     for it in items:
         try:
-            upload(cfg, tok, it)
-        except (urllib.error.URLError, OSError) as e:
-            log(f"failed {it['path']}: {e}; will retry")
+            upload_code(cfg, tok, it) if "code" in it else upload(cfg, tok, it)
+        except (urllib.error.URLError, OSError, subprocess.SubprocessError) as e:
+            log(f"failed {it.get('path') or it.get('code')}: {e}; will retry")
             remaining.append(it)
     QUEUE.write_text("".join(json.dumps(it) + "\n" for it in remaining))
 
@@ -308,6 +418,11 @@ def main(argv):
             data = json.load(sys.stdin)
             if data.get("transcript_path"):
                 enqueue(data["transcript_path"], data.get("session_id"))
+            if data.get("cwd") and str(cfg.get("code", "1")).lower() not in ("0", "false", "no"):
+                STATE_DIR.mkdir(parents=True, exist_ok=True)
+                with QUEUE.open("a") as fh:
+                    fh.write(json.dumps({"code": data["cwd"], "project_dir": Path(
+                        data.get("transcript_path") or "x/x").parent.name}) + "\n")
             detach("flush")
         except Exception as e:  # a hook must never break the user's session
             log(f"hook-end error: {e!r}")

@@ -119,6 +119,23 @@ class MemoryService:
             self.sqlite.audit(actor, "retire", path, "source-deleted", {"chunks": len(ids)})
         return len(gone)
 
+    def retire_paths(self, project: str, paths: list[str], reason: str, actor: str = "daemon") -> int:
+        """Retire the current chunks of documents with exactly these paths in a project."""
+        now, retired = utcnow(), 0
+        for path in paths:
+            row = self.sqlite.conn.execute("SELECT doc_id FROM documents WHERE project = ? AND path = ?",
+                                           (project, path)).fetchone()
+            if not row:
+                continue
+            ids = self.sqlite.current_chunk_ids(row[0])
+            with self.sqlite.transaction() as conn:
+                self.sqlite.retire_chunks(conn, ids, now, superseded_by_doc_version=reason)
+                self.graph.retire_evidence(ids, now)
+                self.lance.retire(ids)
+            retired += 1
+            self.sqlite.audit(actor, "retire", path, reason, {"chunks": len(ids)})
+        return retired
+
     def retire_path_prefix(self, prefix: str, actor: str = "cli") -> dict:
         """Retire every current chunk of documents whose path starts with prefix
         (e.g. a source folder that was removed). History is kept: chunks get

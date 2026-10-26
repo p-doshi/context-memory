@@ -11,6 +11,7 @@ dev laptop. Re-check after dependency upgrades (`uv lock` changes).
 | LanceDB vectors | `<home>/data/lance/` | No |
 | Report digests (short notes per conversation, written by the local model on loopback) | `digests` table in the same SQLite file | No |
 | Raw uploads from other machines | `<home>/inbox/remote/<device>/` | No |
+| Source code from other machines' repositories (tracked source and docs only, changed files, sent by the session-end hook over the SSH link; data folders, key/env files, notebook outputs and files over 500 KB are excluded on the sending machine) | `<home>/inbox/remote/<device>/_code/` until indexed, then the store | No |
 | Daily snapshots of all of the above (7 kept) | `<home>/backup/snapshot-*/` | No; browser profiles and device tokens are excluded |
 | Browser profiles (session cookies) | `<home>/browser/<account>/` | See Google, below |
 | Device tokens | SHA-256 only, in SQLite | No |

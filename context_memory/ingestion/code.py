@@ -190,6 +190,26 @@ def ingest_code_file(svc: MemoryService, path: Path, project: str, repo_root: Pa
     )
 
 
+def ingest_code_text(svc: MemoryService, text: str, rel: str, project: str, path: str,
+                     version: str | None = None, actor: str = "daemon") -> dict:
+    """A source file received as text (from another machine): code is chunked by
+    definitions like local files; Markdown, text and notebooks as notes."""
+    p = Path(rel)
+    if blocked_filename(p):
+        raise IngressRejected(f"blocked filename: {p.name}")
+    if len(text.encode("utf-8")) > MAX_CODE_BYTES:
+        raise IngressRejected(f"file is over the code limit of {MAX_CODE_BYTES} bytes")
+    if not text.strip():
+        return {"status": "empty"}
+    if p.suffix.lower() in MARKDOWN_SUFFIXES or p.suffix.lower() in (".txt", ".rst", ".ipynb"):
+        return svc.ingest_text(text=text, project=project, source="remote-git", kind="note", path=path,
+                               title=rel, source_version=version, actor=actor)
+    return svc.ingest_text(
+        text=text, project=project, source="remote-git", kind="code", path=path, title=rel,
+        source_version=version, tags=[f"lang:{p.suffix.lstrip('.').lower()}"], actor=actor,
+        chunker=make_code_chunker(p, svc.embedder.count_tokens, svc.settings.chunk_max_tokens))
+
+
 def ingest_codebase(svc: MemoryService, root: Path, project: str, max_files: int = 2000,
                     actor: str = "daemon") -> list[dict]:
     root = check_allowed(Path(root), svc.settings.ingest_roots)

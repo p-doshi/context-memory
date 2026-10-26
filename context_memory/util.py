@@ -14,7 +14,8 @@ NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 PROJECT_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 
-SOURCES = {"claude", "chatgpt", "perplexity", "cursor", "manual", "git", "file", "web"}
+# remote-git: code uploaded from another machine's repository (cannot be re-checked here)
+SOURCES = {"claude", "chatgpt", "perplexity", "cursor", "manual", "git", "file", "web", "remote-git"}
 KINDS = {
     "prompt", "response", "decision", "note", "code",
     "paper", "experiment", "config", "ui_spec", "chat",
