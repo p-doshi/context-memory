@@ -351,6 +351,35 @@ def build_app(settings: Settings, embedder: Embedder, service: MemoryService | N
             svc.sqlite.audit(current_device.get()["name"], "report_hide" if hidden else "report_unhide", doc_id, "ok", {})
         return _json({"doc": doc_id, "hidden": hidden})
 
+    @mcp.custom_route("/v1/console/filing", methods=["GET"])
+    async def console_filing(request: Request):
+        project = request.query_params.get("project", "")[:200]
+        with lock:
+            return _json(console_api.filing_suggestions(svc, project))
+
+    @mcp.custom_route("/v1/console/filing", methods=["POST"])
+    async def console_filing_act(request: Request):
+        """{"action": "file" | "unfile" | "dismiss", "project": ..., "docs": [...]}"""
+        try:
+            body = json.loads((await request.body())[:20000] or b"{}")
+            action, project = body["action"], str(body.get("project", ""))[:200]
+            docs = [str(d)[:100] for d in body["docs"]][:200]
+            if action not in ("file", "unfile", "dismiss"):
+                raise ValueError(action)
+        except (ValueError, KeyError, TypeError):
+            return JSONResponse({"error": 'body must be {"action": "file"|"unfile"|"dismiss", "project", "docs": []}'},
+                                status_code=400)
+        actor = f"console:{current_device.get()['name']}"
+        with lock:
+            try:
+                if action == "file":
+                    return _json(svc.file_documents(docs, project, actor=actor))
+                if action == "unfile":
+                    return _json(svc.unfile_documents(docs, actor=actor))
+                return _json({"dismissed": console_api.dismiss_suggestions(svc, project, docs)})
+            except ValueError as e:
+                return JSONResponse({"error": str(e)}, status_code=400)
+
     @mcp.custom_route("/v1/console/passage", methods=["GET"])
     async def console_passage(request: Request):
         doc_id = request.query_params.get("doc", "")[:100]

@@ -360,7 +360,8 @@ def activity(svc, n: int = 60) -> list[dict]:
              "public_export": "published the public copy", "device_add": "added device", "device_pair": "paired device",
              "device_revoke": "revoked device", "device_rotate": "new token for device", "reconcile": "repaired the stores",
              "graph_rebuild": "rebuilt the knowledge graph", "snapshot": "backed up", "public_agent": "visitor question",
-             "report_hide": "hid from report", "report_unhide": "showed in report again"}
+             "report_hide": "hid from report", "report_unhide": "showed in report again",
+             "file_documents": "filed into project"}
     out = []
     for r in svc.sqlite.audit_tail(min(n * 4, 2000)):
         if r["action"] in ("search", "get", "context", "public_search") or r["outcome"] in ("unchanged", "skipped"):
@@ -419,3 +420,69 @@ def passage(svc, doc_id: str, quote: str) -> dict:
         if want and want in digest.words(text):
             return {"found": True, "title": doc[0] or doc[1], "project": doc[2], "ordinal": ordinal, "text": text[:4000]}
     return {"found": False, "title": doc[0] or doc[1], "project": doc[2]}
+
+
+DISMISS_TABLE = """
+CREATE TABLE IF NOT EXISTS filing_dismissed (
+  doc_id TEXT NOT NULL,
+  project TEXT NOT NULL,
+  dismissed_at TEXT NOT NULL,
+  PRIMARY KEY (doc_id, project)
+);
+"""
+
+
+def filing_suggestions(svc, project: str, per_query: int = 25, limit: int = 40) -> dict:
+    """Sessions and chats in other projects that are probably part of `project`: each
+    of the project's own document titles is searched (meaning + keywords) and other
+    conversations are ranked by how often and how high they come up. Nothing moves
+    until the owner confirms (MemoryService.file_documents)."""
+    q = svc.sqlite.conn.execute
+    svc.sqlite.conn.executescript(DISMISS_TABLE)
+    docs = _docs(svc)
+    mine = [d for d in docs if d["project"] == project]
+    queries = sorted({re.sub(r"^Claude project:\s*", "", d["title"]) for d in mine
+                      if d["group"] == "Files & notes" or d["title"].startswith("Claude project:")})[:30]
+    if not queries:
+        queries = [project.replace("-", " ")]
+    by_id = {d["id"]: d for d in docs}
+    dismissed = {r[0] for r in q("SELECT doc_id FROM filing_dismissed WHERE project = ?", (project,))}
+    from context_memory import digest
+    hidden = digest.hidden_ids(svc.sqlite.conn)
+    score: dict[str, float] = {}
+    why: dict[str, list] = {}
+    best: dict[str, tuple] = {}
+    for query in queries:
+        hits = svc._rank(query, per_query, None, None, False, "hybrid", {}, None)
+        seen = set()
+        for rank, h in enumerate(hits):
+            d = by_id.get(h["doc_id"])
+            if (not d or d["project"] == project or d["group"] == "Files & notes" or d["subagent"]
+                    or d["id"] in dismissed or d["id"] in hidden or d["id"] in seen):
+                continue
+            seen.add(d["id"])
+            score[d["id"]] = score.get(d["id"], 0.0) + 1.0 / (rank + 1)
+            why.setdefault(d["id"], []).append(query)
+            if d["id"] not in best or rank < best[d["id"]][0]:
+                best[d["id"]] = (rank, h["chunk_id"])
+    ranked = sorted(score, key=lambda i: -score[i])[:limit]
+    texts = svc.sqlite.get_chunks([best[i][1] for i in ranked])
+    out = []
+    for i in ranked:
+        d, rec = by_id[i], texts.get(best[i][1])
+        snippet = " ".join((rec["text"] if rec else "").split())[:320]
+        out.append({"doc": i, "title": d["title"][:140], "when": d["when"], "group": d["group"],
+                    "project": d["project"], "score": round(score[i], 3), "matched": why[i][:4],
+                    "snippet": snippet})
+    filed = [{"doc": r[0], "from": r[1], "filed_at": r[2]} for r in q(
+        "SELECT doc_id, from_project, filed_at FROM doc_filing WHERE project = ? ORDER BY filed_at DESC", (project,))]
+    return {"project": project, "queries": queries, "suggestions": out, "filed": filed}
+
+
+def dismiss_suggestions(svc, project: str, doc_ids: list[str]) -> int:
+    from context_memory.util import utcnow
+    svc.sqlite.conn.executescript(DISMISS_TABLE)
+    svc.sqlite.conn.executemany("INSERT OR REPLACE INTO filing_dismissed VALUES (?, ?, ?)",
+                                [(d, project, utcnow()) for d in doc_ids])
+    svc.sqlite.conn.commit()
+    return len(doc_ids)

@@ -70,6 +70,20 @@ def source_type_for(source: str, kind: str) -> str:
     return "manual_note"
 
 
+# Owner filings: a document the owner confirmed belongs to another project (e.g. a
+# claude.ai chat about a research project). Later imports of the same document keep
+# the filing, so a sync never moves it back. from_project allows undo.
+FILING_TABLE = """
+CREATE TABLE IF NOT EXISTS doc_filing (
+  doc_id TEXT PRIMARY KEY,
+  project TEXT NOT NULL,
+  from_project TEXT NOT NULL,
+  filed_at TEXT NOT NULL,
+  actor TEXT NOT NULL
+);
+"""
+
+
 class MemoryService:
     def __init__(self, settings: Settings, embedder: Embedder,
                  sqlite: SQLiteStore | None = None, lance: LanceStore | None = None):
@@ -78,6 +92,7 @@ class MemoryService:
         self.sqlite = sqlite or SQLiteStore(settings.sqlite_path)
         self.lance = lance or LanceStore(settings.lance_path, embedder.dim, embedder.model_name)
         self.graph = Graph(self.sqlite)
+        self.sqlite.conn.executescript(FILING_TABLE)
         # Owner-declared aliases ([aliases] in sources.toml): spelling variants
         # of one project are stored under the canonical name.
         self.project_aliases: dict[str, str] = {}
@@ -144,6 +159,50 @@ class MemoryService:
         out = {"documents": docs, "chunks": chunks, "edges": graph["edges_current"]}
         self.sqlite.audit(actor, "rename_project", f"{old} -> {new}", "ok", out)
         return out
+
+    def file_documents(self, doc_ids: list[str], project: str, actor: str = "console") -> dict:
+        """Move documents into `project` on the owner's word, in SQLite and LanceDB,
+        and record the filing so later imports keep it (see FILING_TABLE)."""
+        validate_project(project)
+        q = self.sqlite.conn.execute
+        moved, skipped = [], []
+        for doc_id in dict.fromkeys(doc_ids):
+            row = q("SELECT project, path FROM documents WHERE doc_id = ?", (doc_id,)).fetchone()
+            if not row or row[0] == project:
+                skipped.append({"doc": doc_id, "reason": "unknown" if not row else "already there"})
+                continue
+            if q("SELECT 1 FROM documents WHERE project = ? AND path = ?", (project, row[1])).fetchone():
+                skipped.append({"doc": doc_id, "reason": "same path already in that project"})
+                continue
+            prev = q("SELECT from_project FROM doc_filing WHERE doc_id = ?", (doc_id,)).fetchone()
+            origin = prev[0] if prev else row[0]
+            with self.sqlite.transaction() as conn:
+                conn.execute("UPDATE documents SET project = ? WHERE doc_id = ?", (project, doc_id))
+                conn.execute("UPDATE chunks SET project = ? WHERE doc_id = ?", (project, doc_id))
+                if origin == project:   # filed back where it came from: no rule needed
+                    conn.execute("DELETE FROM doc_filing WHERE doc_id = ?", (doc_id,))
+                else:
+                    conn.execute("INSERT OR REPLACE INTO doc_filing VALUES (?, ?, ?, ?, ?)",
+                                 (doc_id, project, origin, utcnow(), actor))
+            self.lance.set_project([r[0] for r in q("SELECT chunk_id FROM chunks WHERE doc_id = ?", (doc_id,))],
+                                   project)
+            moved.append({"doc": doc_id, "from": row[0]})
+        if moved:
+            self.graph.rebuild()   # entity ids include the project
+        out = {"project": project, "moved": moved, "skipped": skipped}
+        self.sqlite.audit(actor, "file_documents", project, "ok", {"moved": len(moved), "skipped": len(skipped)})
+        return out
+
+    def unfile_documents(self, doc_ids: list[str], actor: str = "console") -> dict:
+        """Undo filings: each document goes back to the project it came from."""
+        q = self.sqlite.conn.execute
+        back: dict[str, list[str]] = {}
+        for doc_id in doc_ids:
+            row = q("SELECT from_project FROM doc_filing WHERE doc_id = ?", (doc_id,)).fetchone()
+            if row:
+                back.setdefault(row[0], []).append(doc_id)
+        results = [self.file_documents(ids, origin, actor=actor) for origin, ids in back.items()]
+        return {"restored": sum(len(r["moved"]) for r in results)}
 
     def rebuild_graph(self, actor: str = "cli") -> dict:
         """(Re)extract graph edges for every document's current chunks."""
@@ -214,6 +273,9 @@ class MemoryService:
         validate_choice(on_secret, {"reject", "redact"}, "on_secret")
         tags = sorted(set(tags or []))
         doc_id = doc_id or stable_id("d", project, path)
+        filed = self.sqlite.conn.execute("SELECT project FROM doc_filing WHERE doc_id = ?", (doc_id,)).fetchone()
+        if filed:
+            project = filed[0]
 
         job_id = new_id("job")
         self.sqlite.start_job(job_id, source, path)

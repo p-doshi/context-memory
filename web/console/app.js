@@ -310,6 +310,7 @@ async function openProject(name) {
   const [story, rep] = await Promise.all([api("/v1/console/project-story?name=" + encodeURIComponent(name)),
                                           api(`/v1/console/report?days=0&project=${encodeURIComponent(name)}`)]);
   PS = { story, rep };
+  loadFiling(name);
   document.querySelectorAll("#p-chips button").forEach((b) => b.classList.toggle("on", b.dataset.project === name));
   const sel = $("#p-chips select");
   if (sel) sel.value = PJ.slice(7).some((p) => p.project === name) ? name : "";
@@ -337,6 +338,40 @@ function renderProject() {
   $("#p-latest").replaceChildren(...st.items.slice(0, 6).map((it) => el("div", { class: "latest" },
     el("time", {}, `${longDate(it.when)} · ${SOURCE_WORDS[it.group] || it.group}`), el("span", {}, it.title))));
 }
+
+// ---- filing: attach conversations from other projects (owner confirms) -------------
+let FILING = null;
+async function loadFiling(name) {
+  $("#p-filing-list").replaceChildren(el("p", { class: "note" }, "Looking for related sessions and chats…"));
+  FILING = await api("/v1/console/filing?project=" + encodeURIComponent(name));
+  if (!PS || PS.story.project !== name) return;
+  const sug = FILING.suggestions;
+  $("#p-filing-count").textContent = sug.length ? `${sug.length} to review` : "nothing to review";
+  $("#p-filing-list").replaceChildren(...(sug.length ? sug.map((s) => el("label", { class: "sug" },
+    el("input", { type: "checkbox", value: s.doc }), el("time", {}, shortDate(s.when)),
+    el("div", {}, el("div", { class: "t" }, s.title),
+       el("div", { class: "m" }, `${SOURCE_WORDS[s.group] || s.group} · now in ${s.project} · matched: ${s.matched.join(" · ")}`),
+       el("div", { class: "x" }, `“${s.snippet}”`))))
+    : [el("p", { class: "note" }, "No likely matches outside this project.")]));
+  $("#p-filed").replaceChildren(...(FILING.filed.length ? [el("h3", {}, `Filed here (${FILING.filed.length})`),
+    ...FILING.filed.map((f) => {
+      const undo = el("button", { class: "link", type: "button" }, "undo");
+      undo.addEventListener("click", () => act("unfile", [f.doc]));
+      return el("div", { class: "stat" }, el("span", {}, `${f.doc} · from ${f.from}`), undo);
+    })] : []));
+}
+async function act(action, docs) {
+  if (!docs.length || !PS) return;
+  const name = PS.story.project;
+  $("#p-filing-msg").textContent = action === "file" ? "Filing…" : "";
+  const r = await api("/v1/console/filing", { action, project: name, docs });
+  $("#p-filing-msg").textContent = action === "file" ? `Filed ${r.moved.length}${r.skipped.length ? `, skipped ${r.skipped.length}` : ""}.`
+    : action === "unfile" ? `Moved ${r.restored} back.` : `Hid ${r.dismissed} from suggestions.`;
+  openProject(name);
+}
+const ticked = () => [...document.querySelectorAll("#p-filing-list input:checked")].map((i) => i.value);
+$("#p-file").addEventListener("click", () => act("file", ticked()));
+$("#p-dismiss").addEventListener("click", () => act("dismiss", ticked()));
 
 // ---- activity --------------------------------------------------------------------
 let ACT = [], kind = "";

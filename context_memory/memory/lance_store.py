@@ -72,6 +72,11 @@ class LanceStore:
     def rename_project(self, old: str, new: str) -> None:
         self.table.update(where=f"project = {_quote(old)}", values={"project": new})
 
+    def set_project(self, chunk_ids: list[str], project: str) -> None:
+        for i in range(0, len(chunk_ids), 500):
+            ids = ", ".join(_quote(c) for c in chunk_ids[i:i + 500])
+            self.table.update(where=f"chunk_id IN ({ids})", values={"project": project})
+
     def delete(self, chunk_ids: list[str]) -> None:
         if chunk_ids:
             ids = ", ".join(_quote(c) for c in chunk_ids)

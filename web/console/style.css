@@ -103,6 +103,20 @@ h1 { font-size: 40px; line-height: 1.08; letter-spacing: -.02em; margin: 16px 0 
 .it .src .ok { color: var(--ok); }
 .more { font: 13px var(--mono); border: 1px solid var(--line); background: var(--panel); padding: 6px 12px; margin-top: 12px; }
 
+/* filing suggestions */
+.filing { margin: 0; padding: 16px 40px; border-bottom: 1px solid var(--line); background: var(--panel); }
+@media (max-width: 860px) { .filing { padding: 14px 18px; } }
+.filing summary { cursor: pointer; font-weight: 600; font-size: 16px; }
+.filing summary .mono:first-child { color: var(--signal); margin-right: 8px; }
+.filing > .note { margin: 10px 0 12px; max-width: 900px; }
+.sug { display: grid; grid-template-columns: 22px 62px minmax(0, 1fr); gap: 10px; padding: 11px 0; border-top: 1px solid var(--line); align-items: baseline; }
+.sug input { margin: 0; width: 16px; height: 16px; accent-color: var(--ink); }
+.sug time { font: 12.5px var(--mono); color: var(--muted); }
+.sug .t { font-size: 15px; overflow-wrap: anywhere; } .sug .m { font: 12px var(--mono); color: var(--muted); margin-top: 3px; }
+.sug .x { font: italic 14px/1.5 var(--serif); color: var(--muted); margin-top: 5px; overflow-wrap: anywhere; }
+.filing-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 12px 0 4px; }
+#p-filed .stat { cursor: default; }
+
 /* aside */
 .aside { border-left: 1px solid var(--line); padding: 24px 28px 40px; }
 .aside h3 { font-size: 15px; font-weight: 600; margin: 26px 0 3px; } .aside h3:first-child { margin-top: 0; }
