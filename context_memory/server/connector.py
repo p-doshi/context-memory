@@ -108,8 +108,25 @@ def build_app(settings, token_sha256: str, hub_url: str, home: Path,
     async def not_found(request: Request):
         return Response("not found", status_code=404)
 
-    return Starlette(routes=[Route("/mcp", mcp, methods=["GET", "POST", "DELETE"]),
-                             Route("/{path:path}", not_found, methods=["GET", "POST", "PUT", "DELETE", "HEAD"])])
+    app = Starlette(routes=[Route("/mcp", mcp, methods=["GET", "POST", "DELETE"]),
+                            Route("/", mcp, methods=["GET", "POST", "DELETE"]),   # URL entered without /mcp
+                            Route("/{path:path}", not_found, methods=["GET", "POST", "PUT", "DELETE", "HEAD"])])
+
+    async def access_log(scope, receive, send):
+        """Every request in one line (method, path, caller, status): never headers or bodies."""
+        if scope["type"] != "http":
+            return await app(scope, receive, send)
+        status = [0]
+
+        async def capture(message):
+            if message["type"] == "http.response.start":
+                status[0] = message["status"]
+            await send(message)
+        await app(scope, receive, capture)
+        req = Request(scope)
+        log.info("%s %s from %s -> %s", scope["method"], scope["path"][:120], client_ip(req), status[0])
+
+    return access_log
 
 
 def serve(settings, host: str = "127.0.0.1", port: int = 8790) -> None:
@@ -123,4 +140,5 @@ def serve(settings, host: str = "127.0.0.1", port: int = 8790) -> None:
     app = build_app(settings, hashlib.sha256(token.encode()).hexdigest(),
                     f"http://127.0.0.1:{settings.hub_port}", settings.data_dir.parent,
                     allowed=settings.connector_allowed_cidrs, ip_header=settings.connector_ip_header)
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     uvicorn.run(app, host=host, port=port, log_level="warning")

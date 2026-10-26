@@ -632,7 +632,12 @@ def build_app(settings: Settings, embedder: Embedder, service: MemoryService | N
                     else:
                         entry[1] += 1
             if dev is None:
-                return JSONResponse({"error": "unauthorized"}, status_code=401)
+                # Clients print this body (Claude Code shows it after a failed sign-in attempt),
+                # so it names the usual cause and the fix rather than just "unauthorized".
+                return JSONResponse({"error": "unauthorized: no valid device token reached the hub. Usually "
+                                              "Claude Code here cannot see CMH_HUB_TOKEN. Close Claude Code "
+                                              "on this machine, run: python3 ~/.local/bin/cmh_push.py doctor "
+                                              "--fix, and reopen."}, status_code=401)
             need = required_scope(path)
             if need and need not in device_scopes(dev):
                 with lock:
