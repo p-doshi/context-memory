@@ -32,6 +32,7 @@ Application-level encryption is roadmap Week 6.
 
 | Party | What | Status |
 |---|---|---|
+| Tailscale (client 1.104.2 on the laptop only; Funnel for the claude.ai connector) | Connection metadata: that Anthropic's servers connect to the laptop, when, and how many bytes. TLS ends on the laptop, so Tailscale's relays carry ciphertext only (Tailscale docs: relays "do not decrypt the traffic"). Client diagnostic logging is turned off (TS_NO_LOGS_NO_SUPPORT=true). | Active since 2026-10-26. The connector accepts only Anthropic's outbound range 160.79.104.0/21 (address taken from Tailscale's X-Forwarded-For, which replaces any client-supplied value: tested), a read-only token, and the Disclosure Gate. Off switch: `cmh connector off` or `tailscale funnel off`. |
 | Cloudflare | Browser fingerprint when claude.ai shows its access challenge | Allowed: it is claude.ai's own gate. The sync does not try to pass challenges. |
 | Perplexity's vendors: Datadog, Cloudflare Insights, Singular, Eppo, Cloudflare Images | Page telemetry from the site's own scripts | **Blocked** in the sync browser (verified: library still loads). Still apply when you browse Perplexity yourself. |
 | Google | Chrome is Google software: update checks, Safe Browsing. A harness profile signed in to Chrome can sync profile data to the Google account. | Harness profiles should stay signed out of Chrome (sign-in to claude.ai/Perplexity with Google does not require Chrome sign-in). |
