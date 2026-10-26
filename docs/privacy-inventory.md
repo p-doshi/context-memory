@@ -90,5 +90,6 @@ that server's administrators can read anything on it regardless.
 
 ## Not used
 
-Tailscale or any other relay or VPN service. Cloud vector databases. Hosted
-embedding APIs.
+Any relay or VPN service for the private store's own links (other machines connect over
+SSH only); Tailscale is used solely as the claude.ai connector's Funnel, above. Cloud
+vector databases. Hosted embedding APIs.
