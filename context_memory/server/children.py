@@ -3,6 +3,7 @@
   llm        llama.cpp llama-server on 127.0.0.1 (the visitor answer model)
   public     the public node (server/public_node.py) on 127.0.0.1
   cloudflared  the named Cloudflare tunnel that carries visitor traffic to it
+  connector  the claude.ai connector gateway (server/connector.py) on 127.0.0.1
 
 Each runs with a restart backoff like the SSH tunnels. Secrets reach a child
 through its environment, never its command line. Output goes to
@@ -68,6 +69,10 @@ def plan(settings, secrets_get) -> list[tuple[str, list[str], dict[str, str]]]:
         # stopping the idle VM; without a command, a sleeping process does that.
         cmd = [settings.wsl_vpn_command] if settings.wsl_vpn_command else ["sleep", "infinity"]
         out.append(("wsl-vpn", ["wsl.exe", "-d", settings.wsl_vpn_distro, "--exec", *cmd], {}))
+    if settings.connector_enabled:
+        # claude.ai connector gateway on loopback; Tailscale Funnel (configured once with
+        # `tailscale funnel --bg`) carries Anthropic's requests to it, TLS ending here.
+        out.append(("connector", [sys.executable, "-m", "context_memory.cli", "connector", "serve"], {}))
     if not settings.public_enabled:
         return out
     if settings.llm_server_exe and settings.llm_model_path and settings.public_llm_url:

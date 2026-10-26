@@ -6,8 +6,9 @@ the internet (through cloudflared). Each request must pass every layer:
 
   1. path: only /mcp exists here;
   2. source address: Anthropic's published outbound range (160.79.104.0/21,
-     platform.claude.com/docs/en/api/ip-addresses), read from cloudflared's
-     CF-Connecting-IP and trusted only when the peer is loopback;
+     platform.claude.com/docs/en/api/ip-addresses), read from the tunnel's header
+     (connector_ip_header: CF-Connecting-IP for cloudflared, X-Forwarded-For for
+     Tailscale Funnel) and trusted only when the peer is loopback;
   3. bearer token: the dedicated "claude-ai" device token (configured in the
      claude.ai connector's request headers), checked by SHA-256 here and again
      by the hub;
@@ -39,7 +40,8 @@ FORWARD_RESP = ("content-type", "mcp-session-id", "mcp-protocol-version")
 
 
 def build_app(settings, token_sha256: str, hub_url: str, home: Path,
-              allowed: list[str] | None = None, per_minute: int = 120):
+              allowed: list[str] | None = None, per_minute: int = 120,
+              ip_header: str = "cf-connecting-ip"):
     from starlette.applications import Starlette
     from starlette.requests import Request
     from starlette.responses import JSONResponse, Response
@@ -50,10 +52,14 @@ def build_app(settings, token_sha256: str, hub_url: str, home: Path,
     lock = threading.Lock()
 
     def client_ip(request: Request) -> str:
+        # The tunnel software runs on this machine, so only a loopback peer may name the
+        # caller in a header. A proxy appends the address it saw to X-Forwarded-For, so
+        # the last entry is the one it added; earlier entries come from the caller.
         peer = request.client.host if request.client else ""
-        if peer in ("127.0.0.1", "::1"):
-            return request.headers.get("cf-connecting-ip", peer)
-        return peer
+        if peer not in ("127.0.0.1", "::1"):
+            return peer
+        value = request.headers.get(ip_header, "")
+        return value.split(",")[-1].strip() if value else "unknown"
 
     def refuse(status: int, why: str, ip: str):
         log.warning("connector refused %s from %s: %s", status, ip, why)
@@ -116,5 +122,5 @@ def serve(settings, host: str = "127.0.0.1", port: int = 8790) -> None:
         raise SystemExit("no connector token: run `cmh connector setup` first")
     app = build_app(settings, hashlib.sha256(token.encode()).hexdigest(),
                     f"http://127.0.0.1:{settings.hub_port}", settings.data_dir.parent,
-                    allowed=settings.connector_allowed_cidrs)
+                    allowed=settings.connector_allowed_cidrs, ip_header=settings.connector_ip_header)
     uvicorn.run(app, host=host, port=port, log_level="warning")

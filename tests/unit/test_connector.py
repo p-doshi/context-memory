@@ -96,3 +96,17 @@ def test_rate_limit(settings, svc, hub_url):
     with _gateway(settings, token, hub_url, allowed=["0.0.0.0/0"], per_minute=3) as c:
         codes = [c.post("/mcp", json=MCP_INIT, headers=auth).status_code for _ in range(4)]
         assert codes[-1] == 429
+
+
+def test_forwarded_for_takes_the_proxys_entry(settings, svc, hub_url):
+    token = hub.add_device(svc.sqlite, "claude-ai", None, scopes="read")
+    app = connector.build_app(settings, hashlib.sha256(token.encode()).hexdigest(), hub_url,
+                              settings.data_dir.parent, ip_header="x-forwarded-for")
+    auth = {**HDR, "Authorization": f"Bearer {token}"}
+    with starlette_testclient.TestClient(app, client=("127.0.0.1", 40000)) as c:
+        ok = c.post("/mcp", json=MCP_INIT, headers={**auth, "X-Forwarded-For": "160.79.106.20"})
+        assert ok.status_code == 200
+        # A caller who sends its own header cannot claim Anthropic's address: the proxy's entry is last.
+        spoof = c.post("/mcp", json=MCP_INIT, headers={**auth, "X-Forwarded-For": "160.79.106.20, 198.51.100.7"})
+        assert spoof.status_code == 403
+        assert c.post("/mcp", json=MCP_INIT, headers=auth).status_code == 403      # no header: refused

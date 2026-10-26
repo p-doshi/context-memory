@@ -82,6 +82,9 @@ class Settings(BaseSettings):
     connector_enabled: bool = False
     connector_port: int = 8790
     connector_allowed_cidrs: list[str] = Field(default_factory=lambda: ["160.79.104.0/21"])
+    # Header the local tunnel uses to name the caller: "cf-connecting-ip" (cloudflared)
+    # or "x-forwarded-for" (Tailscale Funnel, which ends TLS on this machine).
+    connector_ip_header: str = "cf-connecting-ip"
 
     # Public node (server/public_node.py): visitor site from the exported public
     # store, on loopback; cloudflared carries outside traffic to it.
